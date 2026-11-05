@@ -39,6 +39,31 @@ export interface DeParaRevisao {
   dt_confirmacao: string | null
   status_opm: 'ATIVA' | 'INATIVA' | null
   qtd_viaturas_contingencia: number
+  // Último parecer da IA (Qwen local): só sugestão, a decisão é do revisor.
+  ia_resultado: 'ACEITA' | 'SEM_CORRESPONDENCIA' | 'BAIXA_CONFIANCA' | 'DESCARTADA' | null
+  ia_id_opm: number | null
+  ia_nome_opm: string | null
+  ia_confianca: number | null
+  ia_justificativa: string | null
+  ia_modelo: string | null
+}
+
+export interface StatusIa {
+  habilitada: boolean
+  disponivel: boolean
+  modelo: string
+  motivo: string | null
+}
+
+export interface ResultadoSugestaoIa {
+  modelo: string
+  analisadas: number
+  sugestoes_novas: number
+  sem_correspondencia: number
+  descartadas: number
+  falhas: number
+  ia_disponivel: boolean
+  mensagem: string
 }
 
 export interface ResultadoConfirmacao {

@@ -22,6 +22,7 @@ import httpx
 
 logger = logging.getLogger("ia_de_para")
 
+IA_HABILITADA = os.environ.get("IA_HABILITADA", "true").strip().lower() not in ("0", "false", "nao", "não")
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODELO = os.environ.get("OLLAMA_MODELO", "qwen2.5:7b")
 IA_TIMEOUT_S = float(os.environ.get("IA_TIMEOUT_S", "60"))
@@ -182,6 +183,21 @@ class ClienteOllama:
     @property
     def desligado(self) -> bool:
         return self._falhas_seguidas >= IA_FALHAS_PARA_DESLIGAR
+
+    def fechar(self) -> None:
+        self._http.close()
+
+    def verificar(self) -> dict:
+        """Ollama no ar e com o modelo instalado? Rápido (não gera texto): usado pelo aviso da tela."""
+        try:
+            resposta = self._http.get("/api/tags", timeout=3)
+            resposta.raise_for_status()
+            instalados = {m.get("name") for m in resposta.json().get("models", [])}
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return {"disponivel": False, "motivo": "O serviço de IA (Ollama) não respondeu."}
+        if self.modelo not in instalados and f"{self.modelo}:latest" not in instalados:
+            return {"disponivel": False, "motivo": f"O modelo {self.modelo} não está instalado no Ollama."}
+        return {"disponivel": True, "motivo": None}
 
     def sugerir(self, descricao: str, candidatas: list[Candidata]) -> RespostaIA:
         if self.desligado:

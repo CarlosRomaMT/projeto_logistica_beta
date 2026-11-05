@@ -1,7 +1,7 @@
 -- Schema compartilhado entre Logística e Cautela (dados e nomes fictícios).
 -- Premissa do MVP: os dois sistemas usam o mesmo PostgreSQL (visibilidade imediata, RNF02).
 
-DROP TABLE IF EXISTS tb_correcao_divergencia, tb_notificacao_pendente, tb_historico_movimentacao,
+DROP TABLE IF EXISTS tb_execucao_ia, tb_correcao_divergencia, tb_notificacao_pendente, tb_historico_movimentacao,
     tb_usuario_p4, tb_viatura, tb_de_para_unidade, tb_unidade_legado, tb_opm CASCADE;
 
 -- Cadastro corporativo de OPMs (padrão novo).
@@ -26,12 +26,33 @@ CREATE TABLE tb_de_para_unidade (
     fk_id_opm         INTEGER      REFERENCES tb_opm (id_opm),
     situacao          VARCHAR(20)  NOT NULL
         CHECK (situacao IN ('CONFIRMADO', 'PENDENTE', 'SEM_CORRESPONDENCIA')),
-    metodo            VARCHAR(15)  CHECK (metodo IN ('EXATO', 'SIMILARIDADE', 'MANUAL')),
+    metodo            VARCHAR(15)  CHECK (metodo IN ('EXATO', 'SIMILARIDADE', 'IA', 'MANUAL')),
     score             NUMERIC(4, 3),
     observacao        VARCHAR(200),
     confirmado_por    VARCHAR(60),
     dt_confirmacao    TIMESTAMPTZ,
-    dt_atualizacao    TIMESTAMPTZ  NOT NULL DEFAULT now()
+    dt_atualizacao    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    -- Última análise da IA (Qwen local). Só sugestão: quem decide é o revisor.
+    ia_resultado      VARCHAR(20)  CHECK (ia_resultado IN ('ACEITA', 'SEM_CORRESPONDENCIA', 'BAIXA_CONFIANCA', 'DESCARTADA')),
+    ia_id_opm         INTEGER      REFERENCES tb_opm (id_opm),
+    ia_confianca      NUMERIC(4, 3),
+    ia_justificativa  VARCHAR(200),
+    ia_modelo         VARCHAR(60),
+    dt_ia             TIMESTAMPTZ
+);
+
+-- Registro de cada chamada à IA (observabilidade): inclusive falhas e respostas descartadas.
+CREATE TABLE tb_execucao_ia (
+    id                SERIAL PRIMARY KEY,
+    cd_unidade_legado VARCHAR(10)  NOT NULL,
+    modelo            VARCHAR(60)  NOT NULL,
+    resultado         VARCHAR(20)  NOT NULL,
+    motivo            VARCHAR(40),
+    id_opm            INTEGER,
+    confianca         NUMERIC(4, 3),
+    latencia_ms       INTEGER      NOT NULL,
+    usuario           VARCHAR(60)  NOT NULL,
+    dt_execucao       TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 
 CREATE TABLE tb_viatura (

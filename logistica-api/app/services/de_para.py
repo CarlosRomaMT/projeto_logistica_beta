@@ -241,12 +241,15 @@ SQL_DE_PARA = """
     SELECT d.cd_unidade_legado, d.ds_unidade_legado, d.situacao, d.metodo, d.score,
            d.fk_id_opm AS id_opm, o.nome AS nome_opm, d.observacao,
            d.confirmado_por, d.dt_confirmacao, o.status AS status_opm,
+           d.ia_resultado, d.ia_id_opm, oi.nome AS ia_nome_opm, d.ia_confianca, d.ia_justificativa,
+           d.ia_modelo, d.dt_ia,
            (SELECT count(*) FROM tb_viatura v
             WHERE v.cd_unidade_legado = d.cd_unidade_legado
               AND v.status_operacional <> 'BAIXADA'
               AND (v.fk_id_opm_unidade IS NULL OR v.fk_id_opm_unidade = 0)) AS qtd_viaturas_contingencia
     FROM tb_de_para_unidade d
     LEFT JOIN tb_opm o ON o.id_opm = d.fk_id_opm
+    LEFT JOIN tb_opm oi ON oi.id_opm = d.ia_id_opm
 """
 
 

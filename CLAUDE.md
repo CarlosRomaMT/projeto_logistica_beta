@@ -93,17 +93,32 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
    **Atenção:** o gabarito mede onde as viaturas estão, não o nome da OPM (ex.: viaturas da UPM
    "Diretoria de Saúde" estão no Hospital da PM), então parte dos "erros" é ruído do gabarito.
 
+6. **IA integrada à etapa 1 da tela** (mesmo dia):
+   - `app/services/de_para_ia.py`: analisa só linhas PENDENTE/SEM_CORRESPONDENCIA; resposta ACEITA vira
+     sugestão (`metodo = 'IA'`, confiança em `score`), as demais só registram o parecer; nunca confirma,
+     nunca move viatura; nenhuma transação aberta durante a chamada ao modelo e o UPDATE só vale se a
+     linha ainda aguarda decisão (confirmação feita "enquanto a IA pensava" prevalece).
+   - Schema: colunas `ia_*` em `tb_de_para_unidade` e tabela `tb_execucao_ia` (log de toda chamada).
+   - API: `GET /api/de-para/ia/status`, `POST /api/de-para/ia/sugerir`, `GET /api/de-para/ia/execucoes`;
+     cliente via `Depends(obter_cliente_ia)` (substituído nos testes).
+   - Tela: botão "Sugerir com IA", faixa de status da IA, selo "Sugestão da IA" com confiança e
+     justificativa, "sugestão da IA aceita" nas confirmadas.
+   - `docker-compose.yml`: a API acessa o Ollama da máquina por `host.docker.internal`.
+   - 14 testes novos (`tests/test_de_para_ia.py`); suíte da logística: 103 passando.
+   - Teste real com Qwen nos dados fictícios: 103 → 3º BPM Sul (confiança 1,0, concorda com a
+     semelhança); BPTRAN → "nenhuma" (0,1), embora o Batalhão de Trânsito estivesse entre as candidatas.
+
 ## Próximos passos
 
-1. Revisar à mão uma amostra dos 50 erros do híbrido (separar erro do método × ruído do gabarito).
-2. Ajustar o prompt com exemplos do padrão "NPM X - 7º BPM" → "NUCLEO PM - X" e testar com `--limite 30`;
-   testar modelo maior ou `qwen3` (`--modelo`).
-3. Integrar `ia_de_para` ao fluxo do de-para (`sincronizar_de_para` / etapa 1 da tela): método `IA`,
-   colunas de confiança/justificativa/modelo, botão "Sugerir com IA", aviso de IA indisponível,
-   serviço `ollama` no `docker-compose.yml`.
-4. Usar o histórico dos veículos como primeira camada do de-para real (antes do nome e da IA).
-5. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
-6. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
+1. Ajustar o prompt (o modelo é conservador demais: BPTRAN, "NPM X - 7º BPM" → "NUCLEO PM - X") e
+   testar com `--limite 30`; testar modelo maior ou `qwen3` (`--modelo`).
+2. Revisar à mão uma amostra dos 50 erros do híbrido (separar erro do método × ruído do gabarito).
+3. Usar o histórico dos veículos como primeira camada do de-para real (antes do nome e da IA).
+4. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
+5. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
+
+Testes da logística localmente: se a porta 5433 estiver ocupada, suba um Postgres de teste em outra porta
+e aponte `TEST_DATABASE_URL` para ele (`DB_SQL_DIR=../db`).
 
 ## Como rodar rápido
 

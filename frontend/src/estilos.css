@@ -173,3 +173,8 @@ input[type='checkbox'] { width: auto; }
 .revisor-pendente input { border-color: #e0a800; box-shadow: 0 0 0 3px #fff4e0; }
 .resumo-carga { margin: 0 0 8px; padding: 0; list-style: none; display: grid; gap: 6px; font-size: 0.9rem; }
 .resumo-carga .selo { min-width: 26px; text-align: center; font-size: 0.8rem; }
+/* IA no de-para (etapa 1) */
+.selo-ia { background: #efe9fb; color: #5b3a9e; }
+.faixa-ia { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
+.faixa-ia .suave { flex: 1 1 260px; }
+.justificativa-ia { font-style: italic; }

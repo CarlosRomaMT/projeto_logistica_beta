@@ -51,6 +51,49 @@ class DeParaOut(BaseModel):
     dt_confirmacao: datetime | None
     status_opm: str | None
     qtd_viaturas_contingencia: int
+    # Último parecer da IA (só sugestão; a decisão é do revisor).
+    ia_resultado: str | None = None
+    ia_id_opm: int | None = None
+    ia_nome_opm: str | None = None
+    ia_confianca: float | None = None
+    ia_justificativa: str | None = None
+    ia_modelo: str | None = None
+    dt_ia: datetime | None = None
+
+
+class SugestaoIaIn(BaseModel):
+    usuario: str = Field(min_length=3, max_length=60)
+
+
+class ResultadoSugestaoIaOut(BaseModel):
+    modelo: str
+    analisadas: int
+    sugestoes_novas: int
+    sem_correspondencia: int
+    descartadas: int
+    falhas: int
+    ia_disponivel: bool
+    mensagem: str
+
+
+class StatusIaOut(BaseModel):
+    habilitada: bool
+    disponivel: bool
+    modelo: str
+    motivo: str | None
+
+
+class ExecucaoIaOut(BaseModel):
+    id: int
+    cd_unidade_legado: str
+    modelo: str
+    resultado: str
+    motivo: str | None
+    id_opm: int | None
+    confianca: float | None
+    latencia_ms: int
+    usuario: str
+    dt_execucao: datetime
 
 
 class ConfirmacaoDeParaIn(BaseModel):

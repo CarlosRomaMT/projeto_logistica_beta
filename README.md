@@ -61,6 +61,7 @@ cadastro real e com quem o conhece.
 | RF04: carga, contingência (OPM 0) e relatório CSV | `app/services/carga.py` + `scripts/migrar_opm_legado.py` | ✅ com simulação (`--dry-run`) |
 | Melhoria: carga pela tela (aba Implantação, etapa 2) | `app/api/carga.py` + `frontend/src/pages/CargaLotacao.tsx` | ✅ simular → executar, relatório para baixar com quem executou |
 | RF04: de-para unidade antiga → OPM por descrição, com validação humana | `app/services/de_para.py` + `scripts/de_para.py` | ✅ exportação e importação de CSV (aplica na hora) |
+| IA: sugestão de OPM por Qwen local (Ollama) na etapa 1, com justificativa, validação, log e plano B | `app/services/ia_de_para.py` + `app/services/de_para_ia.py` + `ValidacaoDePara.tsx` | ✅ só sugere; confirmação continua humana |
 | Melhoria: validação do de-para na tela (aba Implantação, etapa 1) | `app/api/de_para.py` + `frontend/src/pages/ValidacaoDePara.tsx` | ✅ confirmação lota as viaturas na hora, com histórico |
 | Melhoria: correção em lote das divergências (o bug original nos dados existentes) | `app/services/divergencias.py` + `frontend/src/pages/CorrecaoDivergencias.tsx` | ✅ proposta → decisão humana → movimentação, tudo ou nada |
 | RNF01: transação explícita e rollback total | serviço e script | ✅ testes de falha injetada |
@@ -99,6 +100,19 @@ OPMs* mostra "3 unidade(s) aguardando decisão":
 - 105 (5º BPM EXTINTO) foi associada automaticamente a uma OPM **inativa** e por isso aparece como
   pendente ("OPM inativa: escolha outra"). Se ninguém souber qual OPM sucedeu a unidade, deixe-a: a
   viatura dela (EFG1J11) vai para a OPM 0 e é lotada na etapa 4.
+
+**Com IA (Qwen local):** a faixa acima da tabela mostra se a IA está pronta ("IA local pronta
+(qwen2.5:7b)") ou indisponível. Clique em **Sugerir com IA**: o modelo analisa só as unidades que
+aguardam decisão e, para cada uma, devolve OPM, confiança e uma justificativa, que aparecem na coluna
+*Situação* com o selo **Sugestão da IA**. Quando a IA discorda da semelhança de nome, a opinião anterior
+fica registrada. Nada é gravado nas viaturas: confirmar continua sendo do revisor (na lista de
+confirmadas aparece "sugestão da IA aceita"). Cada chamada fica em `tb_execucao_ia`
+(`GET /api/de-para/ia/execucoes`: resultado, motivo de descarte e latência). Para mostrar a falha, feche
+o Ollama e clique de novo: a tela avisa "IA indisponível" e as sugestões por semelhança continuam.
+Requer Ollama na máquina (`ollama pull qwen2.5:7b`); a API no Docker o acessa por
+`host.docker.internal:11434` (`OLLAMA_URL`, `OLLAMA_MODELO`, `IA_HABILITADA` no `docker-compose.yml`).
+Com os dados fictícios, o Qwen confirma a 103 (concorda com a semelhança) mas responde "nenhuma" para a
+sigla BPTRAN: é o comportamento conservador medido na avaliação (ver *Limitações*).
 
 Toda associação confirmada tem o botão **Alterar** (inclusive as automáticas). Alterar move para a nova
 OPM as viaturas lotadas pela associação anterior que nunca foram movimentadas depois. Sem escolher a

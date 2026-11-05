@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { ErroApi, requisitar } from '../api/client'
 import { AVISO_SEM_REVISOR, EtapaTitulo } from '../components/EtapaTitulo/EtapaTitulo'
 import { SeletorOpm } from '../components/SeletorOpm/SeletorOpm'
-import type { DeParaRevisao, Opm, ResultadoConfirmacao } from '../types'
+import type { DeParaRevisao, Opm, ResultadoConfirmacao, ResultadoSugestaoIa, StatusIa } from '../types'
 
 interface Props {
   revisor: string
@@ -15,6 +15,7 @@ type Aviso = { tipo: 'sucesso' | 'erro'; texto: string }
 
 const ROTULO = {
   PENDENTE: { classe: 'selo-manutencao', texto: 'Sugestão a confirmar' },
+  IA: { classe: 'selo-ia', texto: 'Sugestão da IA' },
   SEM_CORRESPONDENCIA: { classe: 'selo-erro', texto: 'Sem sugestão: escolha a OPM' },
   OPM_INATIVA: { classe: 'selo-erro', texto: 'OPM inativa: escolha outra' },
   ALTERANDO: { classe: 'selo', texto: 'Alterando' },
@@ -22,6 +23,41 @@ const ROTULO = {
 
 /** Associada a uma OPM extinta: confirmada, mas as viaturas não têm para onde ir. */
 const opmInativa = (d: DeParaRevisao) => d.situacao === 'CONFIRMADO' && d.status_opm !== 'ATIVA'
+
+const pct = (x: number) => `${Math.round(x * 100)}%`
+
+/** O que a IA disse sobre a unidade, para o revisor decidir (a IA nunca confirma sozinha). */
+function ParecerIa({ d }: { d: DeParaRevisao }) {
+  if (d.situacao === 'CONFIRMADO' || !d.ia_resultado) return null
+  if (d.metodo === 'IA') {
+    return (
+      <>
+        <div className="suave">
+          confiança {d.ia_confianca !== null ? pct(d.ia_confianca) : '—'} · {d.ia_modelo}
+        </div>
+        {d.ia_justificativa && <div className="suave justificativa-ia">“{d.ia_justificativa}”</div>}
+      </>
+    )
+  }
+  const texto =
+    d.ia_resultado === 'DESCARTADA'
+      ? 'IA: resposta descartada pela validação'
+      : `IA: nenhuma OPM corresponde com segurança${d.ia_nome_opm ? ` (talvez ${d.ia_nome_opm})` : ''}`
+  return (
+    <>
+      <div className="suave">{texto}</div>
+      {d.ia_resultado !== 'DESCARTADA' && d.ia_justificativa && (
+        <div className="suave justificativa-ia">“{d.ia_justificativa}”</div>
+      )}
+    </>
+  )
+}
+
+function comoFoiConfirmada(d: DeParaRevisao) {
+  if (d.metodo === 'EXATO') return 'Nome idêntico (automático)'
+  const ia = d.ia_id_opm === null ? '' : d.ia_id_opm === d.id_opm ? ' · sugestão da IA aceita' : ' · IA sugeria outra'
+  return `Manual: ${d.confirmado_por ?? '—'}${ia}`
+}
 
 function sugestaoComoOpm(d: DeParaRevisao): Opm | null {
   return d.id_opm !== null && d.nome_opm && !opmInativa(d) ? { id_opm: d.id_opm, nome: d.nome_opm, status: 'ATIVA' } : null
@@ -34,6 +70,8 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
   const [editando, setEditando] = useState<Set<string>>(new Set())
   const [enviando, setEnviando] = useState<string | null>(null)
   const [aviso, setAviso] = useState<Aviso | null>(null)
+  const [statusIa, setStatusIa] = useState<StatusIa | null>(null)
+  const [sugerindo, setSugerindo] = useState(false)
 
   const carregar = useCallback(() => {
     requisitar<DeParaRevisao[]>('/logistica/api/de-para')
@@ -45,6 +83,39 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
   }, [])
 
   useEffect(carregar, [carregar, sinalRecarga])
+
+  const carregarStatusIa = useCallback(() => {
+    requisitar<StatusIa>('/logistica/api/de-para/ia/status')
+      .then(setStatusIa)
+      .catch(() =>
+        setStatusIa({ habilitada: true, disponivel: false, modelo: '', motivo: 'Não foi possível consultar a IA.' }),
+      )
+  }, [])
+
+  useEffect(carregarStatusIa, [carregarStatusIa])
+
+  async function sugerirComIa() {
+    if (!revisor.trim()) {
+      setAviso({ tipo: 'erro', texto: AVISO_SEM_REVISOR })
+      pedirRevisor()
+      return
+    }
+    setSugerindo(true)
+    setAviso(null)
+    try {
+      const r = await requisitar<ResultadoSugestaoIa>('/logistica/api/de-para/ia/sugerir', {
+        method: 'POST',
+        body: JSON.stringify({ usuario: revisor.trim() }),
+      })
+      setAviso({ tipo: r.ia_disponivel ? 'sucesso' : 'erro', texto: r.mensagem })
+      carregar()
+    } catch (erro) {
+      setAviso({ tipo: 'erro', texto: erro instanceof ErroApi ? erro.message : 'Falha de comunicação com o servidor.' })
+    } finally {
+      setSugerindo(false)
+      carregarStatusIa()
+    }
+  }
 
   // O pedido de revisor deixa de valer assim que o campo é preenchido.
   useEffect(() => {
@@ -103,6 +174,7 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
   function rotulo(d: DeParaRevisao) {
     if (opmInativa(d)) return ROTULO.OPM_INATIVA
     if (d.situacao === 'CONFIRMADO') return ROTULO.ALTERANDO
+    if (d.metodo === 'IA') return ROTULO.IA
     return ROTULO[d.situacao]
   }
 
@@ -116,11 +188,30 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
       />
       <p className="nota">
         O cadastro antigo identifica a unidade só pelo nome, escrito de várias formas (ex.: "3º BTL PM"). O sistema
-        sugere a OPM com o nome mais parecido; confirme a sugestão ou escolha outra. O que você confirma aqui é aplicado
+        sugere a OPM com o nome mais parecido e, em <strong>Sugerir com IA</strong>, um modelo de IA local (Qwen) analisa
+        as unidades sem associação e explica a sugestão. Nenhuma sugestão é aplicada sozinha: confirme ou escolha outra. O que você confirma aqui é aplicado
         na hora às viaturas da unidade, com registro no histórico. As associações automáticas (nome idêntico) são
         aplicadas pela carga (etapa 2). Uma associação errada pode ser alterada em <strong>Alterar</strong>: as viaturas
         lotadas por ela e nunca movimentadas depois vão para a nova OPM.
       </p>
+      <div className="faixa-ia">
+        <button
+          type="button"
+          className="secundario"
+          disabled={sugerindo || enviando !== null || aguardandoDecisao === 0 || statusIa?.habilitada === false}
+          onClick={sugerirComIa}
+          title="A IA só sugere: nada é gravado nas viaturas até você confirmar"
+        >
+          {sugerindo ? 'IA analisando…' : 'Sugerir com IA'}
+        </button>
+        <span className="suave">
+          {statusIa === null
+            ? 'Verificando a IA…'
+            : statusIa.disponivel
+              ? `IA local pronta (${statusIa.modelo}). Ela só sugere; a decisão é sua.`
+              : `IA indisponível: ${statusIa.motivo} As sugestões por semelhança de nome continuam valendo.`}
+        </span>
+      </div>
       {aviso && (
         <div role="alert" className={`aviso aviso-${aviso.tipo}`}>
           {aviso.texto}
@@ -151,9 +242,10 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
                   </td>
                   <td>
                     <span className={`selo ${r.classe}`}>{r.texto}</span>
-                    {d.situacao === 'PENDENTE' && d.score !== null && (
-                      <div className="suave">semelhança {Math.round(d.score * 100)}%</div>
+                    {d.situacao === 'PENDENTE' && d.metodo !== 'IA' && d.score !== null && (
+                      <div className="suave">semelhança {pct(d.score)}</div>
                     )}
+                    <ParecerIa d={d} />
                     {opmInativa(d) && <div className="suave">associada a {d.nome_opm}</div>}
                     {emEdicao && <div className="suave">hoje: {d.nome_opm}</div>}
                     {d.observacao && <div className="suave">{d.observacao}</div>}
@@ -216,9 +308,7 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
                   <span className="placa">{d.cd_unidade_legado}</span> {d.ds_unidade_legado}
                 </td>
                 <td>{d.nome_opm}</td>
-                <td className="suave">
-                  {d.metodo === 'EXATO' ? 'Nome idêntico (automático)' : `Manual: ${d.confirmado_por ?? '—'}`}
-                </td>
+                <td className="suave">{comoFoiConfirmada(d)}</td>
                 <td>{d.qtd_viaturas_contingencia || ''}</td>
                 <td>
                   <button type="button" className="secundario" onClick={() => alternarEdicao(d.cd_unidade_legado, true)}>
