@@ -36,8 +36,19 @@ def particao(item: dict) -> str:
     return "dev" if int(item["cod_upm"]) % 10 < 3 else "teste"
 
 
+def montar_banco_exemplos(gabarito_completo: list[dict], opms: list[dict], minimo_viaturas: int = 2) -> ia.BancoExemplos:
+    """Exemplos do RAG: SÓ pares da partição dev, de alta confiança (todas as viaturas na mesma OPM e
+    pelo menos `minimo_viaturas`). A partição teste nunca entra como exemplo."""
+    nomes = {o["cod_opm"]: o["opm"] for o in opms}
+    exemplos = [ia.Exemplo(g["cod_upm"], g["descricao_upm"], nomes[g["cod_opm_gabarito"]])
+                for g in gabarito_completo
+                if particao(g) == "dev" and int(g["n_veiculos"]) >= minimo_viaturas
+                and float(g["pureza"]) >= 1.0 and g["cod_opm_gabarito"] in nomes]
+    return ia.BancoExemplos(exemplos)
+
+
 def avaliar(gabarito: list[dict], opms: list[dict], cliente: "ia.ClienteOllama | None",
-            n_candidatas: int) -> list[dict]:
+            n_candidatas: int, banco: "ia.BancoExemplos | None" = None, n_exemplos: int = 0) -> list[dict]:
     opms_regra = [{"id_opm": int(o["cod_opm"]), "nome": o["opm"]} for o in opms]
     candidatas_todas = [ia.Candidata(int(o["cod_opm"]), o["opm"], o["opm_abreviatura"] or None) for o in opms]
     seletor = ia.SeletorCandidatas(candidatas_todas)
@@ -60,7 +71,9 @@ def avaliar(gabarito: list[dict], opms: list[dict], cliente: "ia.ClienteOllama |
             "posicao_gabarito": ids.index(alvo) + 1 if alvo in ids else None,
         }
         if cliente is not None:
-            r = cliente.sugerir(descricao, candidatas)
+            exemplos = banco.buscar(descricao, n_exemplos, excluir_chave=item["cod_upm"]) if banco else []
+            linha["exemplos_usados"] = " ".join(e.chave for e in exemplos)
+            r = cliente.sugerir(descricao, candidatas, exemplos)
             linha.update({"ia_resultado": r.resultado, "ia_motivo": r.motivo, "ia_id": r.id_opm,
                           "ia_confianca": r.confianca, "ia_justificativa": r.justificativa,
                           "ia_latencia_ms": r.latencia_ms})
@@ -82,7 +95,9 @@ def gerar_markdown(m: dict, meta: dict) -> str:
     p = [
         "# Comparativo: regra atual x Qwen local x híbrido\n",
         f"Gerado em {meta['gerado_em']} por `avaliacao/comparar_regra_x_qwen.py`.\n",
-        f"- Prompt: **{meta['prompt']}** · partição do gabarito: **{meta['particao']}**",
+        f"- Prompt: **{meta['prompt']}** · partição do gabarito: **{meta['particao']}**"
+        + (f" · RAG: {meta['exemplos_por_pergunta']} exemplos por pergunta, de um banco de "
+           f"{meta['banco_exemplos']} pares só da partição dev" if meta.get("banco_exemplos") else ""),
         f"- Gabarito: **{meta['total']}** UPMs reais cuja OPM correta foi deduzida do histórico dos veículos "
         f"(pureza ≥ {meta['pureza_minima']}, OPM vigente).",
         f"- Candidatas por pergunta à IA: {meta['candidatas']} (de {meta['opms_vigentes']} OPMs vigentes); "
@@ -136,6 +151,8 @@ def main(argv=None) -> int:
     parser.add_argument("--pureza-minima", default="1.0", help="só para constar no relatório")
     parser.add_argument("--prompt", default=ia.IA_VERSAO_PROMPT, choices=sorted(ia.PROMPTS),
                         help="versão do prompt do sistema")
+    parser.add_argument("--exemplos", type=int, default=ia.IA_MAX_EXEMPLOS,
+                        help="exemplos recuperados por pergunta (só nas versões de prompt com RAG)")
     parser.add_argument("--particao", default="todos", choices=["todos", "dev", "teste"],
                         help="dev = 30%% do gabarito para ajustar o prompt; teste = 70%% restantes, só para medir")
     parser.add_argument("--rotulo", default="", help="sufixo do nome do relatório (ex.: falha_ollama)")
@@ -150,6 +167,7 @@ def main(argv=None) -> int:
         print(f"ERRO: gabarito não encontrado em {dados}. Rode antes: python -m avaliacao.gerar_gabarito",
               file=sys.stderr)
         return 2
+    gabarito_completo = gabarito
     if args.particao != "todos":
         gabarito = [g for g in gabarito if (particao(g) == args.particao)]
     if args.limite and args.limite < len(gabarito):
@@ -158,7 +176,14 @@ def main(argv=None) -> int:
     cliente = None if args.sem_ia else ia.ClienteOllama(
         url=args.ollama_url, modelo=args.modelo, timeout_s=args.timeout, confianca_minima=args.confianca_minima,
         versao_prompt=args.prompt)
-    linhas = avaliar(gabarito, opms, cliente, args.candidatas)
+    banco = None
+    if cliente is not None and cliente.usa_exemplos:
+        banco = montar_banco_exemplos(gabarito_completo, opms)
+        if len(banco.exemplos) < ia.IA_MIN_EXEMPLOS_RAG:  # mesma regra do sistema
+            logger.warning("RAG desligado: banco com %d exemplo(s) < %d.", len(banco.exemplos), ia.IA_MIN_EXEMPLOS_RAG)
+            banco = None
+        logger.info("RAG: %d exemplo(s) da partição dev; %d por pergunta", len(banco.exemplos), args.exemplos)
+    linhas = avaliar(gabarito, opms, cliente, args.candidatas, banco, args.exemplos)
     if cliente is not None and cliente.desligado:
         logger.warning("O Ollama ficou indisponível durante a execução: o híbrido caiu na regra atual.")
 
@@ -167,7 +192,9 @@ def main(argv=None) -> int:
     meta = {"gerado_em": f"{quando:%d/%m/%Y %H:%M}", "total": len(linhas), "modelo": args.modelo,
             "candidatas": args.candidatas, "opms_vigentes": len(opms), "confianca_minima": args.confianca_minima,
             "pureza_minima": args.pureza_minima, "amostra": args.limite, "semente": args.semente,
-            "prompt": None if args.sem_ia else args.prompt, "particao": args.particao}
+            "prompt": None if args.sem_ia else args.prompt, "particao": args.particao,
+            "exemplos_por_pergunta": args.exemplos if banco else 0,
+            "banco_exemplos": len(banco.exemplos) if banco else 0}
 
     saida = Path(args.saida)
     saida.mkdir(parents=True, exist_ok=True)

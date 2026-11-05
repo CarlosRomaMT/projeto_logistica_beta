@@ -137,6 +137,47 @@ def test_ia_que_responde_nenhuma_mantem_a_linha_sem_sugestao(client):
     assert de_para(client, "103")["metodo"] == "SIMILARIDADE"  # a sugestão por semelhança continua
 
 
+def test_rag_usa_so_associacoes_confirmadas_para_opm_ativa(client, monkeypatch):
+    monkeypatch.setattr(ia, "IA_MIN_EXEMPLOS_RAG", 1)  # banco fictício é pequeno
+    mensagens = {}
+
+    def tratar(request):
+        conteudo = json.loads(request.content)["messages"][1]["content"]
+        descricao = json.loads(conteudo.split("cadastro antigo: ", 1)[1].split("\n", 1)[0])
+        mensagens[descricao] = conteudo
+        return httpx.Response(200, json={"message": {"content": json.dumps(
+            {"id_opm": None, "confianca": 0.5, "justificativa": "teste"})}})
+
+    client.post("/api/de-para/103/confirmar", json={"id_opm": 3, "usuario": "sgt.revisor"})  # decisão humana
+    usar_ia(ia.ClienteOllama(modelo="qwen2.5:7b", transport=httpx.MockTransport(tratar), versao_prompt="v6"))
+
+    sugerir(client)
+
+    referencia = mensagens["NPM RIO CLARO DO NORTE - 2º BPM"].split("Descrição da unidade", 1)[0]
+    assert "ASSOCIAÇÕES JÁ CONFIRMADAS" in referencia
+    assert '"2ª CIA PM SANTA AURORA - 1º BPM" → "2ª CIA PM - 1º BPM"' in referencia  # confirmada à mão
+    assert "BOA VISTA DO SUL" not in referencia  # 105: confirmada, mas para OPM inativa
+    assert "BPTRAN" not in referencia and "LAGO AZUL" not in referencia  # pendentes não viram exemplo
+    assert "NPM RIO CLARO DO NORTE" not in referencia  # nunca a própria unidade
+
+
+def test_rag_fica_desligado_com_poucas_associacoes_confirmadas(client):
+    # Só 4 associações confirmadas (nome idêntico) < mínimo: exemplos pouco representativos atrapalham.
+    mensagens = []
+
+    def tratar(request):
+        mensagens.append(json.loads(request.content)["messages"][1]["content"])
+        return httpx.Response(200, json={"message": {"content": json.dumps(
+            {"id_opm": None, "confianca": 0.5, "justificativa": "teste"})}})
+
+    usar_ia(ia.ClienteOllama(modelo="qwen2.5:7b", transport=httpx.MockTransport(tratar), versao_prompt="v6"))
+
+    sugerir(client)
+
+    assert len(mensagens) == AGUARDANDO
+    assert not any("ASSOCIAÇÕES JÁ CONFIRMADAS" in m for m in mensagens)
+
+
 # 2. Entrada inválida / resposta inadequada da IA
 
 

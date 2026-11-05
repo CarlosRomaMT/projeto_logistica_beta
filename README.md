@@ -131,7 +131,9 @@ confirmadas aparece "sugestão da IA aceita"). Cada chamada fica em `tb_execucao
 o Ollama e clique de novo: a tela avisa "IA indisponível" e as sugestões por semelhança continuam.
 Requer Ollama na máquina (`ollama pull qwen2.5:7b`); a API no Docker o acessa por
 `host.docker.internal:11434` (`OLLAMA_URL`, `OLLAMA_MODELO`, `IA_HABILITADA` no `docker-compose.yml`).
-Resultado observado com `qwen2.5:7b` e o prompt v2 (padrão) nos dados fictícios, que mostra na demo
+Resultado observado com `qwen2.5:7b` nos dados fictícios (só 4 associações confirmadas no início: o RAG
+fica desligado e vale o prompt v2, registrado como "qwen2.5:7b (prompt v2)" em cada sugestão), que mostra
+na demo
 tanto o ganho quanto o motivo da validação humana:
 
 | Unidade | Sugestão da IA | |
@@ -304,7 +306,11 @@ as 5 OPMs vigentes mais parecidas (seleção determinística por termos raros, e
 saída obrigatória em JSON Schema, temperatura 0 e seed fixa. O prompt é versionado (`IA_VERSAO_PROMPT`,
 padrão `v2`; `--prompt` no comparativo) e a escolha da versão e do número de candidatas foi feita na
 partição dev do gabarito e medida na partição teste (`evidencias/ajuste_prompt_20261105.md`: híbrido de
-43,9% para 63,7% de acurácia e de 63,9% para 74,1% de precisão). A resposta é validada: JSON no contrato, id
+43,9% para 63,7% de acurácia e de 63,9% para 74,1% de precisão). O padrão atual é a `v6`, que soma o
+**RAG de exemplos**: as associações já confirmadas mais parecidas na forma entram no prompt como
+referência (`evidencias/rag_exemplos_20261105.md`: na partição teste, precisão de 74,1% para 83,0% e erros
+de 35 para 23). Com menos de 20 associações confirmadas (`IA_MIN_EXEMPLOS_RAG`) o RAG fica desligado e a
+chamada usa exatamente o prompt `v2`, registrado na sugestão. A resposta é validada: JSON no contrato, id
 dentro das candidatas enviadas (barra alucinação), confiança entre 0 e 1 e acima do mínimo (0,6). Ollama
 fora do ar, timeout ou erro HTTP → resultado `INDISPONIVEL`/`TIMEOUT` e uso da regra atual; após 3
 falhas seguidas, um disjuntor para de chamar o modelo. A IA **nunca confirma**: só sugere para o revisor.

@@ -95,6 +95,21 @@ def _mensagem(cont: Counter, total: int, modelo: str, parou_no_meio: bool) -> st
     return texto
 
 
+def exemplos_confirmados(conn: Connection) -> list[ia.Exemplo]:
+    """RAG: associações JÁ CONFIRMADAS (nome idêntico ou decisão humana) para OPM ativa. Sugestões
+    pendentes nunca viram exemplo, e cada confirmação nova melhora as sugestões seguintes."""
+    linhas = conn.execute(
+        text("""
+            SELECT d.cd_unidade_legado, d.ds_unidade_legado, o.nome
+            FROM tb_de_para_unidade d JOIN tb_opm o ON o.id_opm = d.fk_id_opm
+            WHERE d.situacao = 'CONFIRMADO' AND o.status = :ativa AND o.id_opm <> :contingencia
+            ORDER BY d.cd_unidade_legado
+        """),
+        {"ativa": STATUS_OPM_ATIVA, "contingencia": ID_OPM_CONTINGENCIA},
+    ).mappings()
+    return [ia.Exemplo(linha["cd_unidade_legado"], linha["ds_unidade_legado"], linha["nome"]) for linha in linhas]
+
+
 def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
     with engine.connect() as conn:
         alvos = [dict(linha) for linha in conn.execute(
@@ -107,15 +122,31 @@ def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
             {"aguardando": list(AGUARDANDO)},
         ).mappings()]
         seletor = ia.SeletorCandidatas(opms_candidatas(conn))
+        banco = None
+        if getattr(cliente, "usa_exemplos", False):
+            confirmados = exemplos_confirmados(conn)
+            if len(confirmados) >= ia.IA_MIN_EXEMPLOS_RAG:
+                banco = ia.BancoExemplos(confirmados)
+            else:
+                logger.info("RAG desligado: %d associação(ões) confirmada(s), mínimo %d para usar exemplos.",
+                            len(confirmados), ia.IA_MIN_EXEMPLOS_RAG)
 
     identificacao = getattr(cliente, "identificacao", cliente.modelo)
     cont: Counter = Counter()
     for alvo in alvos:
-        r = cliente.sugerir(alvo["ds_unidade_legado"], seletor.selecionar(alvo["ds_unidade_legado"]))
+        descricao = alvo["ds_unidade_legado"]
+        candidatas = seletor.selecionar(descricao)
+        if banco is not None:
+            exemplos = banco.buscar(descricao, excluir_chave=alvo["cd_unidade_legado"])
+            r = cliente.sugerir(descricao, candidatas, exemplos)
+        else:
+            r = cliente.sugerir(descricao, candidatas)
         cont[r.resultado] += 1
+        # Registra a versão de prompt realmente usada (ex.: v6 sem exemplos suficientes roda como v2).
+        usada = f"{cliente.modelo} (prompt {r.versao_prompt})" if getattr(r, "versao_prompt", None) else identificacao
         with engine.begin() as conn:
-            registrar_execucao(conn, alvo["cd_unidade_legado"], identificacao, r, usuario)
-            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, identificacao):
+            registrar_execucao(conn, alvo["cd_unidade_legado"], usada, r, usuario)
+            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, usada):
                 cont["ja_decididas"] += 1  # o revisor confirmou enquanto a IA pensava: decisão humana vale
 
     logger.info("IA no de-para por %s: %s", usuario, dict(cont))

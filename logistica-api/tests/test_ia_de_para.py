@@ -142,13 +142,29 @@ def test_cada_versao_envia_seu_prompt_e_seu_esquema(versao):
              "justificativa": "mesma localidade"})}})
 
     cliente = ClienteOllama(transport=httpx.MockTransport(tratar), versao_prompt=versao)
-    r = cliente.sugerir("NPM Vila Fictícia", CANDIDATAS)
+    exemplos = [ia.Exemplo("1", "NPM Lagoa Seca - 7º BPM", "NUCLEO PM - LAGOA SECA")]
+    r = cliente.sugerir("NPM Vila Fictícia", CANDIDATAS, exemplos)
 
     prompt, esquema = ia.PROMPTS[versao]
     assert chamadas[0]["messages"][0]["content"] == prompt
     assert chamadas[0]["format"] == esquema
     assert (r.resultado, r.id_opm) == (ia.ACEITA, 10)  # campo "analise" extra não atrapalha a validação
+    assert r.versao_prompt == versao
     assert cliente.identificacao == f"{cliente.modelo} (prompt {versao})"
+
+
+def test_versao_com_rag_sem_exemplos_usa_exatamente_a_versao_sem_rag():
+    chamadas = []
+
+    def tratar(request):
+        chamadas.append(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": json.dumps(
+            {"id_opm": 10, "confianca": 0.9, "justificativa": "x"})}})
+
+    r = ClienteOllama(transport=httpx.MockTransport(tratar), versao_prompt="v6").sugerir("NPM X", CANDIDATAS, [])
+
+    assert chamadas[0]["messages"][0]["content"] == ia.PROMPTS[ia.VERSAO_SEM_EXEMPLOS][0]
+    assert r.versao_prompt == ia.VERSAO_SEM_EXEMPLOS
 
 
 def test_versao_de_prompt_desconhecida_e_recusada():
@@ -160,6 +176,57 @@ def test_exemplos_do_prompt_sao_ficticios_e_nao_citam_o_caso_da_demo():
     # O caso BPTRAN da demonstração não pode estar "colado" no prompt.
     for prompt, _ in ia.PROMPTS.values():
         assert "BPTRAN" not in prompt
+
+
+# RAG de exemplos
+
+
+def exemplo(chave, descricao, nome):
+    return ia.Exemplo(chave, descricao, nome)
+
+
+BANCO = [
+    exemplo("1", "NPM Lagoa Seca - 7º BPM", "NUCLEO PM - LAGOA SECA"),
+    exemplo("2", "NPM Morro Alto - 4º BPM", "NUCLEO PM - MORRO ALTO"),
+    exemplo("3", "NPM Campo Belo - 7º BPM", "NUCLEO PM - CAMPO BELO"),
+    exemplo("4", "2ª CIA PM Rio Fundo - 3º BPM", "2ª CIA PM - 3º BPM"),
+    exemplo("5", "1ª CIA PM Pedra Lisa - 9º BPM", "1ª CIA PM - 9º BPM"),
+    exemplo("6", "3ª CIA PM Vale Verde - 2º BPM", "3ª CIA PM - 2º BPM"),
+    exemplo("7", "DIRETORIA DE OBRAS", "DIRETORIA DE OBRAS E PATRIMONIO"),
+]
+
+
+def test_rag_recupera_exemplos_da_mesma_forma():
+    achados = ia.BancoExemplos(BANCO).buscar("NPM Juruena - 10º BPM", limite=3)
+    assert {e.chave for e in achados} == {"1", "2", "3"}  # outros núcleos, não as companhias
+
+
+def test_rag_nunca_usa_a_propria_unidade_como_exemplo():
+    banco = ia.BancoExemplos(BANCO)
+    assert "1" not in {e.chave for e in banco.buscar("NPM Lagoa Seca - 7º BPM", limite=7, excluir_chave="1")}
+    # Nem uma cópia com outra chave (mesma descrição normalizada).
+    assert "1" not in {e.chave for e in banco.buscar("npm lagoa seca - 7 bpm", limite=7)}
+
+
+def test_rag_vazio_ou_limite_zero():
+    assert ia.BancoExemplos([]).buscar("NPM X") == []
+    assert ia.BancoExemplos(BANCO).buscar("NPM X", limite=0) == []
+
+
+def test_so_a_versao_com_rag_envia_os_exemplos():
+    enviados = {}
+
+    def tratar(request):
+        enviados[len(enviados)] = json.loads(request.content)["messages"][1]["content"]
+        return httpx.Response(200, json={"message": {"content": json.dumps(
+            {"id_opm": 10, "confianca": 0.9, "justificativa": "padrão dos exemplos"})}})
+
+    exemplos = [BANCO[0]]
+    ClienteOllama(transport=httpx.MockTransport(tratar), versao_prompt="v6").sugerir("NPM X", CANDIDATAS, exemplos)
+    ClienteOllama(transport=httpx.MockTransport(tratar), versao_prompt="v2").sugerir("NPM X", CANDIDATAS, exemplos)
+
+    assert "ASSOCIAÇÕES JÁ CONFIRMADAS" in enviados[0] and '"NPM Lagoa Seca - 7º BPM"' in enviados[0]
+    assert "ASSOCIAÇÕES JÁ CONFIRMADAS" not in enviados[1]  # v2 ignora os exemplos
 
 
 # Seleção de candidatas (determinística)

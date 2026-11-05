@@ -130,15 +130,28 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
    Qwen v2 nos fictícios: acerta 103, 106 (BPTRAN) e 109; erra 107 (escolhe a 3ª CIA do 2º BPM, como no
    banco real) e responde "nenhuma" para 108 e 110. Suíte: logística 113, cautela 6.
 
+9. **RAG de exemplos** (mesmo dia; `evidencias/rag_exemplos_20261105.md`):
+   - `ia_de_para.BancoExemplos` recupera pares já conhecidos pela FORMA da descrição (termos estruturais
+     mantidos, números → #, nomes próprios → X); prompt `v6` = v2 + exemplos. No sistema, exemplos =
+     associações CONFIRMADAS para OPM ativa (`de_para_ia.exemplos_confirmados`); pendentes nunca.
+   - Avaliação sem vazamento: exemplos só da partição dev (69 pares, pureza 100%, ≥ 2 viaturas), medição
+     única na teste com k=5 fixado antes. Híbrido na teste: v2 100 acertos/35 erros (74,1%) →
+     **v6 112/23 (83,0%)**, 2,4 s por unidade. `v6` virou o padrão (`IA_VERSAO_PROMPT`).
+   - Achado nos dados fictícios: com 4 exemplos (todos "Nº BPM - cidade") o RAG piorou (103 → batalhão da
+     cidade). Regra: RAG só com ≥ 20 confirmadas (`IA_MIN_EXEMPLOS_RAG`); abaixo disso usa exatamente o
+     prompt v2 (`VERSAO_SEM_EXEMPLOS`) e grava "prompt v2" na sugestão (`RespostaIA.versao_prompt`).
+   - Usuário pediu checar CPU/GPU antes da medição: GPU livre (o processo "estranho" era `nvgwls.exe`,
+     do serviço NVIDIA Display Container, reiniciando sozinho); RAM livre ~3 GB é o recurso mais apertado.
+   - Suíte: logística 121, avaliação 16.
+
 ## Próximos passos
 
-1. **RAG de exemplos** (few-shot dinâmico): colocar no prompt os 3–5 pares já conhecidos mais parecidos
-   (histórico dos veículos com pureza 100% e confirmações humanas). Na avaliação, exemplos só da
-   partição dev e medição só na teste; a própria unidade nunca entra como exemplo. Opcional: trocar o
-   seletor por embeddings locais (`nomic-embed-text`/`bge-m3`) — hoje a OPM certa está entre as 5
-   candidatas em ~81% dos casos.
-2. Testar `qwen3:8b` (cabe nos 6 GB da RTX 3060) com `--modelo`, na mesma partição teste.
-3. Usar o histórico dos veículos como primeira camada do de-para real (antes do nome e da IA).
+1. Usar o histórico dos veículos como primeira camada do de-para real (antes do nome e da IA) e como
+   fonte de exemplos do RAG (~265 pares no banco de desenvolvimento).
+2. Testar `qwen3:8b` (cabe nos 6 GB da RTX 3060) com `--modelo`, na mesma partição teste. Opcional:
+   seletor de candidatas por embeddings locais — a OPM certa está entre as 5 candidatas em ~81% dos casos.
+3. Erros que restam na demo (107 confundida com a superior, 108 núcleo→pelotão, 110 unidade elevada):
+   ver se melhoram com o RAG quando houver ≥ 20 confirmadas.
 4. Revisar à mão uma amostra dos erros do híbrido (separar erro do método × ruído do gabarito).
 5. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
 6. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.

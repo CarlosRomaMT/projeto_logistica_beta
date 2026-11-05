@@ -144,15 +144,41 @@ ESQUEMA_COM_ANALISE = {
     "required": ["analise", *ESQUEMA_RESPOSTA["required"]],
 }
 
+# v6: v2 + RAG de exemplos. A mensagem traz as associações JÁ CONFIRMADAS mais parecidas na forma
+# (ex.: outros "NPM <cidade> - Nº BPM"), para o modelo aprender o padrão da instituição em vez de regras.
+PROMPT_V6 = PROMPT_V2.replace(
+    """
+
+Exemplos com unidades fictícias:""",
+    """
+7. Quando vier a lista ASSOCIAÇÕES JÁ CONFIRMADAS, use-a para entender como o cadastro antigo desta \
+instituição costuma ser escrito e a que tipo de OPM ele corresponde (siglas, unidade superior após o \
+hífen, núcleo que virou pelotão). É só referência de padrão: a resposta continua sendo um id_opm da \
+lista de candidatas.
+
+Exemplos com unidades fictícias:""",
+)
+assert PROMPT_V6 != PROMPT_V2
+
 PROMPTS = {
     "v1": (PROMPT_V1, ESQUEMA_RESPOSTA),
     "v2": (PROMPT_V2, ESQUEMA_RESPOSTA),
     "v3": (PROMPT_V3, ESQUEMA_COM_ANALISE),
     "v4": (PROMPT_V4, ESQUEMA_RESPOSTA),
     "v5": (PROMPT_V5, ESQUEMA_RESPOSTA),
+    "v6": (PROMPT_V6, ESQUEMA_RESPOSTA),
 }
-# v2 escolhida pela avaliação na partição dev (ver evidencias/comparativo_*_dev_*.md).
-IA_VERSAO_PROMPT = os.environ.get("IA_VERSAO_PROMPT", "v2")
+# Versões que recebem exemplos recuperados (RAG). As demais ignoram os exemplos.
+VERSOES_COM_EXEMPLOS = {"v6"}
+IA_MAX_EXEMPLOS = int(os.environ.get("IA_MAX_EXEMPLOS", "5"))
+# Abaixo disso o banco não é representativo e o RAG atrapalha (com 4 pares, todos "Nº BPM - cidade",
+# o modelo aprendeu "a cidade manda" e errou a 103 nos dados fictícios). Sem exemplos, v6 ≈ v2.
+IA_MIN_EXEMPLOS_RAG = int(os.environ.get("IA_MIN_EXEMPLOS_RAG", "20"))
+# Versão com RAG chamada SEM exemplos usa exatamente esta (a medida sem RAG), não um texto intermediário.
+VERSAO_SEM_EXEMPLOS = "v2"
+# v6 (v2 + RAG de exemplos) é o padrão: na partição teste, híbrido de 74,1% para 83,0% de precisão
+# (evidencias/rag_exemplos_20261105.md). v2 foi escolhida antes na partição dev.
+IA_VERSAO_PROMPT = os.environ.get("IA_VERSAO_PROMPT", "v6")
 PROMPT_SISTEMA = PROMPT_V1  # compatibilidade
 
 
@@ -171,6 +197,7 @@ class RespostaIA:
     justificativa: str | None = None
     motivo: str | None = None
     latencia_ms: int = 0
+    versao_prompt: str | None = None  # versão efetivamente usada nesta chamada
 
 
 # --- Seleção determinística das candidatas enviadas ao modelo ---
@@ -226,10 +253,71 @@ class SeletorCandidatas:
 # --- Montagem da pergunta e validação da resposta ---
 
 
-def montar_mensagem(descricao: str, candidatas: list[Candidata]) -> str:
+# --- RAG de exemplos: associações já confirmadas, recuperadas pela forma da descrição ---
+
+
+@dataclass(frozen=True)
+class Exemplo:
+    """Par já conhecido: descrição antiga → nome da OPM. `chave` identifica a origem, para nunca usar a
+    própria unidade como exemplo dela mesma."""
+
+    chave: str
+    descricao: str
+    nome_opm: str
+
+
+class BancoExemplos:
+    """Recupera os exemplos mais parecidos com uma descrição.
+
+    Compara principalmente a FORMA: termos estruturais (frequentes no banco, como NPM, CIA, BPM, SEDE)
+    ficam, números viram # e nomes próprios viram X. "NPM JURUENA - 10ª CIPM" e "NPM LUCIARA - 7º BPM"
+    viram "npm X # cipm" e "npm X # bpm". Termos raros em comum (mesma cidade ou superior) desempatam.
+    """
+
+    def __init__(self, exemplos: list[Exemplo], frequencia_minima: int = 3):
+        self.exemplos = exemplos
+        self._termos = [tokens(e.descricao) for e in exemplos]
+        frequencia: dict[str, int] = {}
+        for termos in self._termos:
+            for t in set(termos):
+                frequencia[t] = frequencia.get(t, 0) + 1
+        self._estruturais = {t for t, f in frequencia.items() if f >= frequencia_minima and not t.isdigit()}
+        total = len(exemplos) or 1
+        self._idf = {t: math.log((total + 1) / (f + 0.5)) for t, f in frequencia.items()}
+        self._formas = [self._forma(t) for t in self._termos]
+
+    def _forma(self, termos: list[str]) -> str:
+        return " ".join("#" if t.isdigit() else t if t in self._estruturais else "X" for t in termos)
+
+    def buscar(self, descricao: str, limite: int = IA_MAX_EXEMPLOS,
+               excluir_chave: str | None = None) -> list[Exemplo]:
+        if limite <= 0 or not self.exemplos:
+            return []
+        termos = tokens(descricao)
+        forma, alvo = self._forma(termos), set(termos)
+        peso_alvo = sum(self._idf.get(t, 0.0) for t in alvo) or 1.0
+        normalizada = " ".join(termos)
+        pontuados = []
+        for i, (exemplo, termos_ex) in enumerate(zip(self.exemplos, self._termos)):
+            if exemplo.chave == excluir_chave or " ".join(termos_ex) == normalizada:
+                continue  # nunca a própria unidade (nem uma cópia dela) como exemplo
+            comum = sum(self._idf.get(t, 0.0) for t in alvo & set(termos_ex)) / peso_alvo
+            pontuados.append((0.7 * SequenceMatcher(None, forma, self._formas[i]).ratio() + 0.3 * comum, i))
+        pontuados.sort(key=lambda p: (-p[0], p[1]))
+        return [self.exemplos[i] for _, i in pontuados[:limite]]
+
+
+def montar_mensagem(descricao: str, candidatas: list[Candidata], exemplos: list[Exemplo] | None = None) -> str:
     linhas = [f"{c.id_opm} | {c.nome} | {c.abreviatura or '-'}" for c in candidatas]
+    referencia = ""
+    if exemplos:
+        pares = [f"- {json.dumps(e.descricao, ensure_ascii=False)} → {json.dumps(e.nome_opm, ensure_ascii=False)}"
+                 for e in exemplos]
+        referencia = ("ASSOCIAÇÕES JÁ CONFIRMADAS (referência de padrão, não são candidatas):\n"
+                      + "\n".join(pares) + "\n\n")
     return (
-        f"Descrição da unidade no cadastro antigo: {json.dumps(descricao, ensure_ascii=False)}\n\n"
+        referencia
+        + f"Descrição da unidade no cadastro antigo: {json.dumps(descricao, ensure_ascii=False)}\n\n"
         "OPMs candidatas (id_opm | nome | abreviatura):\n" + "\n".join(linhas)
     )
 
@@ -271,6 +359,7 @@ class ClienteOllama:
         self.modelo = modelo
         self.versao_prompt = versao_prompt
         self._prompt, self._esquema = PROMPTS[versao_prompt]
+        self._versao_atual = versao_prompt
         self.confianca_minima = confianca_minima
         self._http = httpx.Client(base_url=url, timeout=timeout_s, transport=transport)
         self._falhas_seguidas = 0
@@ -299,17 +388,26 @@ class ClienteOllama:
             return {"disponivel": False, "motivo": f"O modelo {self.modelo} não está instalado no Ollama."}
         return {"disponivel": True, "motivo": None}
 
-    def sugerir(self, descricao: str, candidatas: list[Candidata]) -> RespostaIA:
+    @property
+    def usa_exemplos(self) -> bool:
+        return self.versao_prompt in VERSOES_COM_EXEMPLOS
+
+    def sugerir(self, descricao: str, candidatas: list[Candidata],
+                exemplos: list[Exemplo] | None = None) -> RespostaIA:
         if self.desligado:
             return RespostaIA(INDISPONIVEL, motivo="DISJUNTOR_ABERTO")
+        self._versao_atual = (self.versao_prompt if not self.usa_exemplos or exemplos
+                              else VERSAO_SEM_EXEMPLOS)
+        prompt, esquema = PROMPTS[self._versao_atual]
         corpo = {
             "model": self.modelo,
             "stream": False,
-            "format": self._esquema,
+            "format": esquema,
             "options": {"temperature": 0, "seed": 42, "num_ctx": 8192},
             "messages": [
-                {"role": "system", "content": self._prompt},
-                {"role": "user", "content": montar_mensagem(descricao, candidatas)},
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": montar_mensagem(
+                    descricao, candidatas, exemplos if self.usa_exemplos else None)},
             ],
         }
         inicio = time.perf_counter()
@@ -338,7 +436,8 @@ class ClienteOllama:
 
     def _registrar(self, r: RespostaIA, inicio: float) -> RespostaIA:
         r.latencia_ms = int((time.perf_counter() - inicio) * 1000)
+        r.versao_prompt = self._versao_atual
         # Sem a descrição no log: só o desfecho, para não espalhar nome de unidade real.
         logger.info("ia_de_para modelo=%s prompt=%s resultado=%s motivo=%s id_opm=%s confianca=%s latencia_ms=%d",
-                    self.modelo, self.versao_prompt, r.resultado, r.motivo, r.id_opm, r.confianca, r.latencia_ms)
+                    self.modelo, r.versao_prompt, r.resultado, r.motivo, r.id_opm, r.confianca, r.latencia_ms)
         return r
