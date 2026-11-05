@@ -6,7 +6,6 @@ import type {
   DeParaRevisao,
   Opm,
   ResultadoConfirmacao,
-  ResultadoConfirmacaoHistorico,
   ResultadoSugestaoIa,
   StatusIa,
 } from '../types'
@@ -23,7 +22,6 @@ type Aviso = { tipo: 'sucesso' | 'erro'; texto: string }
 const ROTULO = {
   PENDENTE: { classe: 'selo-manutencao', texto: 'Sugestão a confirmar' },
   IA: { classe: 'selo-ia', texto: 'Sugestão da IA' },
-  HISTORICO: { classe: 'selo-historico', texto: 'Sugestão pelo histórico' },
   SEM_CORRESPONDENCIA: { classe: 'selo-erro', texto: 'Sem sugestão: escolha a OPM' },
   OPM_INATIVA: { classe: 'selo-erro', texto: 'OPM inativa: escolha outra' },
   ALTERANDO: { classe: 'selo', texto: 'Alterando' },
@@ -44,6 +42,11 @@ function ParecerIa({ d }: { d: DeParaRevisao }) {
           confiança {d.ia_confianca !== null ? pct(d.ia_confianca) : '—'} · {d.ia_modelo}
         </div>
         {d.ia_justificativa && <div className="suave justificativa-ia">“{d.ia_justificativa}”</div>}
+        {d.ia_alerta && (
+          <div className="alerta-ia" role="note">
+            ⚠ {d.ia_alerta}
+          </div>
+        )}
       </>
     )
   }
@@ -101,31 +104,6 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
   }, [])
 
   useEffect(carregarStatusIa, [carregarStatusIa])
-
-  async function confirmarHistorico() {
-    if (!revisor.trim()) {
-      setAviso({ tipo: 'erro', texto: AVISO_SEM_REVISOR })
-      pedirRevisor()
-      return
-    }
-    setEnviando('historico')
-    setAviso(null)
-    try {
-      const r = await requisitar<ResultadoConfirmacaoHistorico>('/logistica/api/de-para/historico/confirmar', {
-        method: 'POST',
-        body: JSON.stringify({ usuario: revisor.trim() }),
-      })
-      const partes = [`${r.confirmadas.length} unidade(s) confirmada(s) pelo histórico das viaturas.`]
-      partes.push(r.movidas.length ? `Viaturas lotadas: ${r.movidas.join(', ')}.` : 'Nenhuma viatura precisou mudar.')
-      if (r.bloqueadas.length) partes.push(`Não puderam ser lotadas: ${r.bloqueadas.map((b) => b.placa).join(', ')}.`)
-      setAviso({ tipo: 'sucesso', texto: partes.join(' ') })
-      onAlterado()
-    } catch (erro) {
-      setAviso({ tipo: 'erro', texto: erro instanceof ErroApi ? erro.message : 'Falha de comunicação.' })
-    } finally {
-      setEnviando(null)
-    }
-  }
 
   async function sugerirComIa() {
     if (!revisor.trim()) {
@@ -203,13 +181,11 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
   const pendentes = linhas.filter((d) => precisaDecisao(d) || editando.has(d.cd_unidade_legado))
   const confirmadas = linhas.filter((d) => !precisaDecisao(d) && !editando.has(d.cd_unidade_legado))
   const aguardandoDecisao = linhas.filter(precisaDecisao).length
-  const doHistorico = linhas.filter((d) => d.situacao === 'PENDENTE' && d.metodo === 'HISTORICO').length
 
   function rotulo(d: DeParaRevisao) {
     if (opmInativa(d)) return ROTULO.OPM_INATIVA
     if (d.situacao === 'CONFIRMADO') return ROTULO.ALTERANDO
     if (d.metodo === 'IA') return ROTULO.IA
-    if (d.metodo === 'HISTORICO') return ROTULO.HISTORICO
     return ROTULO[d.situacao]
   }
 
@@ -229,22 +205,6 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
         aplicadas pela carga (etapa 2). Uma associação errada pode ser alterada em <strong>Alterar</strong>: as viaturas
         lotadas por ela e nunca movimentadas depois vão para a nova OPM.
       </p>
-      {doHistorico > 0 && (
-        <div className="faixa-ia">
-          <button
-            type="button"
-            disabled={enviando !== null || sugerindo}
-            onClick={confirmarHistorico}
-            title="Confirma de uma vez as associações sugeridas pelo histórico das viaturas (tudo ou nada)"
-          >
-            {enviando === 'historico' ? 'Confirmando…' : `Confirmar sugestões do histórico (${doHistorico})`}
-          </button>
-          <span className="suave">
-            Unidades cujas viaturas já estão quase todas numa mesma OPM. Confira a evidência em cada linha antes
-            de confirmar; as que não quiser, confirme ou altere uma a uma.
-          </span>
-        </div>
-      )}
       <div className="faixa-ia">
         <button
           type="button"

@@ -56,26 +56,26 @@ def _observacao(alvo: dict, r: ia.RespostaIA) -> str | None:
     return f"A semelhança de nome indicava: {alvo['nome_opm']} ({round(float(alvo['score'] or 0) * 100)}%)."[:200]
 
 
-def gravar_resultado(conn: Connection, alvo: dict, r: ia.RespostaIA, modelo: str) -> bool:
+def gravar_resultado(conn: Connection, alvo: dict, r: ia.RespostaIA, modelo: str,
+                     alerta: str | None = None) -> bool:
     """Grava a análise da IA na linha do de-para. Devolve False se a linha já foi decidida."""
     params = {"cd": alvo["cd_unidade_legado"], "aguardando": list(AGUARDANDO), "resultado": r.resultado,
               "ia_opm": r.id_opm if r.resultado in (ia.ACEITA, ia.BAIXA_CONFIANCA) else None,
-              "confianca": r.confianca, "modelo": modelo,
+              "confianca": r.confianca, "modelo": modelo, "alerta": alerta,
               "justificativa": r.justificativa if r.resultado != ia.DESCARTADA else f"Resposta descartada: {r.motivo}"}
     campos_ia = """ia_resultado = :resultado, ia_id_opm = :ia_opm, ia_confianca = :confianca,
-                   ia_justificativa = :justificativa, ia_modelo = :modelo, dt_ia = now(), dt_atualizacao = now()"""
+                   ia_justificativa = :justificativa, ia_modelo = :modelo, ia_alerta = :alerta,
+                   dt_ia = now(), dt_atualizacao = now()"""
     if r.resultado == ia.ACEITA:
         sql = f"""UPDATE tb_de_para_unidade
                   SET fk_id_opm = :ia_opm, situacao = :pendente, metodo = 'IA', score = :confianca,
                       observacao = :observacao, {campos_ia}
-                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)
-                    AND metodo IS DISTINCT FROM 'HISTORICO'"""
+                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)"""
         params.update(pendente=SITUACAO_PENDENTE, observacao=_observacao(alvo, r))
     else:
         # Sem sugestão nova: a da semelhança (se houver) continua valendo; só registra o parecer da IA.
         sql = f"""UPDATE tb_de_para_unidade SET {campos_ia}
-                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)
-                    AND metodo IS DISTINCT FROM 'HISTORICO'"""
+                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)"""
     return conn.execute(text(sql), params).rowcount > 0
 
 
@@ -98,9 +98,9 @@ def _mensagem(cont: Counter, total: int, modelo: str, parou_no_meio: bool) -> st
 
 
 def exemplos_confirmados(conn: Connection) -> list[ia.Exemplo]:
-    """RAG: associações JÁ CONFIRMADAS (nome idêntico ou decisão humana) para OPM ativa, mais os pares do
-    histórico dos veículos com pureza de 100% (a mesma fonte usada na avaliação). Sugestões por semelhança
-    ou da IA nunca viram exemplo; cada confirmação nova melhora as sugestões seguintes."""
+    """RAG: associações JÁ CONFIRMADAS (nome idêntico ou decisão humana) para OPM ativa, mais os pares das
+    viaturas já preenchidas com pureza de 100% (como a instituição associou os nomes; a mesma fonte da
+    avaliação). Sugestões por semelhança ou da IA nunca viram exemplo."""
     linhas = conn.execute(
         text("""
             SELECT d.cd_unidade_legado, d.ds_unidade_legado, o.nome
@@ -126,7 +126,7 @@ def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
                 SELECT d.cd_unidade_legado, d.ds_unidade_legado, d.fk_id_opm, d.metodo, d.score,
                        d.observacao, o.nome AS nome_opm
                 FROM tb_de_para_unidade d LEFT JOIN tb_opm o ON o.id_opm = d.fk_id_opm
-                WHERE d.situacao = ANY(:aguardando) AND d.metodo IS DISTINCT FROM 'HISTORICO'
+                WHERE d.situacao = ANY(:aguardando)
                 ORDER BY d.cd_unidade_legado
             """),
             {"aguardando": list(AGUARDANDO)},
@@ -154,9 +154,13 @@ def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
         cont[r.resultado] += 1
         # Registra a versão de prompt realmente usada (ex.: v6 sem exemplos suficientes roda como v2).
         usada = f"{cliente.modelo} (prompt {r.versao_prompt})" if getattr(r, "versao_prompt", None) else identificacao
+        alerta = (seletor.alerta_de_coerencia(descricao, r.id_opm, candidatas)
+                  if r.resultado in (ia.ACEITA, ia.BAIXA_CONFIANCA) and r.id_opm is not None else None)
+        if alerta:
+            cont["alertas"] += 1
         with engine.begin() as conn:
             registrar_execucao(conn, alvo["cd_unidade_legado"], usada, r, usuario)
-            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, usada):
+            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, usada, alerta):
                 cont["ja_decididas"] += 1  # o revisor confirmou enquanto a IA pensava: decisão humana vale
 
     logger.info("IA no de-para por %s: %s", usuario, dict(cont))

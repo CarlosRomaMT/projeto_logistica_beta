@@ -66,14 +66,14 @@ def test_sincronizacao_nao_sobrescreve_decisao_humana(consultar):
         """)
         criadas = sincronizar_de_para(conn)
 
-    assert criadas == 34  # 35 unidades antigas, uma já decidida
+    assert criadas == 9  # 10 unidades antigas, uma já decidida
     manual = consultar("SELECT * FROM tb_de_para_unidade WHERE cd_unidade_legado = '106'")[0]
     assert (manual["fk_id_opm"], manual["metodo"]) == (6, "MANUAL")
 
 
 def test_sincronizacao_repetida_nao_cria_nada():
     with engine.begin() as conn:
-        assert sincronizar_de_para(conn) == 35
+        assert sincronizar_de_para(conn) == 10
         assert sincronizar_de_para(conn) == 0
 
 
@@ -89,7 +89,7 @@ def test_subida_da_api_deixa_o_de_para_pronto_para_revisao(consultar):
     with TestClient(app) as client:  # o `with` dispara o lifespan
         de_para = client.get("/api/de-para").json()
 
-    assert len(de_para) == 35
+    assert len(de_para) == 10
     assert {d["cd_unidade_legado"]: d["situacao"] for d in de_para}["103"] == "PENDENTE"
     manual = consultar("SELECT fk_id_opm, metodo FROM tb_de_para_unidade WHERE cd_unidade_legado = '106'")[0]
     assert (manual["fk_id_opm"], manual["metodo"]) == (6, "MANUAL")
@@ -208,8 +208,8 @@ def test_listagem_traz_pendentes_primeiro_com_viaturas_na_contingencia(client, a
     de_para = client.get("/api/de-para").json()
 
     assert [(d["cd_unidade_legado"], d["situacao"], d["qtd_viaturas_contingencia"]) for d in de_para[:3]] == [
-        ("103", "PENDENTE", 2), ("105", "CONFIRMADO", 1), ("106", "SEM_CORRESPONDENCIA", 1),
-    ]  # a 105 está confirmada, mas para uma OPM inativa: também precisa de decisão
+        ("103", "PENDENTE", 2), ("106", "SEM_CORRESPONDENCIA", 1), ("107", "SEM_CORRESPONDENCIA", 1),
+    ]
     assert de_para[0]["nome_opm"] == "2ª CIA PM - 1º BPM"
 
 
@@ -258,20 +258,31 @@ def test_confirmar_unidade_inexistente_ou_sem_revisor(client, apos_carga):
 # --- Alterar uma associação já confirmada ---
 
 
-def test_associacao_a_opm_inativa_aparece_entre_as_pendentes(client, apos_carga):
+@pytest.fixture
+def unidade_de_opm_extinta(tmp_path):
+    """Caso raro no banco real (fora do seed): unidade antiga cujo nome é idêntico ao de uma OPM extinta."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql("INSERT INTO tb_unidade_legado (cd_unidade, ds_unidade)"
+                             " VALUES ('150', '5º BPM - BOA VISTA DO SUL')")
+        conn.exec_driver_sql("INSERT INTO tb_viatura (placa, modelo, status_operacional, cd_unidade_legado)"
+                             " VALUES ('EXT1A11', 'Renault Duster', 'DISPONIVEL', '150')")
+    executar_migracao(saida=tmp_path)
+
+
+def test_associacao_a_opm_inativa_aparece_entre_as_pendentes(client, viatura, unidade_de_opm_extinta):
     de_para = client.get("/api/de-para").json()
 
-    inativa = next(d for d in de_para if d["cd_unidade_legado"] == "105")
+    inativa = next(d for d in de_para if d["cd_unidade_legado"] == "150")
     assert (inativa["situacao"], inativa["status_opm"]) == ("CONFIRMADO", "INATIVA")
-    pendentes = [d["cd_unidade_legado"] for d in de_para[:3]]
-    assert sorted(pendentes) == ["103", "105", "106"]
+    assert inativa in de_para[:7]  # junto das que precisam de decisão, antes das resolvidas
+    assert viatura("EXT1A11")["fk_id_opm_unidade"] == 0  # a carga não usa OPM inativa
 
 
-def test_reassociar_unidade_de_opm_inativa_tira_a_viatura_da_opm_0(client, viatura, apos_carga):
-    corpo = client.post("/api/de-para/105/confirmar", json={"id_opm": 1, "usuario": "sgt.revisor"}).json()
+def test_reassociar_unidade_de_opm_inativa_tira_a_viatura_da_opm_0(client, viatura, unidade_de_opm_extinta):
+    corpo = client.post("/api/de-para/150/confirmar", json={"id_opm": 1, "usuario": "sgt.revisor"}).json()
 
-    assert corpo["movidas"] == ["EFG1J11"]
-    assert viatura("EFG1J11")["fk_id_opm_unidade"] == 1
+    assert corpo["movidas"] == ["EXT1A11"]
+    assert viatura("EXT1A11")["fk_id_opm_unidade"] == 1
 
 
 def test_alterar_associacao_corrige_viaturas_lotadas_pela_carga(client, viatura, consultar, apos_carga):
@@ -289,73 +300,3 @@ def test_alterar_associacao_corrige_viaturas_lotadas_pela_carga(client, viatura,
     """)
     assert [tuple(h.values()) for h in historico] == [("CORRECAO_DE_PARA", 1, 2)]
 
-
-# --- Camada "histórico dos veículos" ---
-
-
-def de_para_de(consultar, cd):
-    return consultar("SELECT * FROM tb_de_para_unidade WHERE cd_unidade_legado = :cd", cd=cd)[0]
-
-
-def test_historico_dos_veiculos_vira_sugestao_com_a_evidencia(consultar):
-    with engine.begin() as conn:
-        sincronizar_de_para(conn)
-
-    linha = de_para_de(consultar, "201")  # "NPM AGUA CLARA DO SUL - 3º BPM": 2 viaturas no NUCLEO
-    assert (linha["situacao"], linha["metodo"], linha["fk_id_opm"]) == ("PENDENTE", "HISTORICO", 12)
-    assert float(linha["score"]) == 1.0
-    assert linha["observacao"] == "2 de 2 viaturas desta unidade já estão nesta OPM."
-    # Nome idêntico continua automático; unidade sem histórico continua pela semelhança.
-    assert (de_para_de(consultar, "101")["situacao"], de_para_de(consultar, "103")["metodo"]) == (
-        "CONFIRMADO", "SIMILARIDADE")
-
-
-def test_historico_com_viaturas_divididas_nao_sugere(consultar):
-    with engine.begin() as conn:
-        conn.exec_driver_sql("UPDATE tb_viatura SET fk_id_opm_unidade = 13 WHERE placa = 'HST0102'")  # 1 de 2
-        sincronizar_de_para(conn)
-
-    assert de_para_de(consultar, "201")["metodo"] != "HISTORICO"
-
-
-def test_historico_ignora_viatura_movimentada_pelo_sistema_novo(client, consultar, viatura):
-    # Depois da implantação o legado fica congelado: transferência legítima não fala da unidade antiga.
-    client.post(f"/api/viaturas/{viatura('HST0101')['id_viatura']}/movimentar", json={"id_opm_destino": 13})
-
-    with engine.begin() as conn:
-        sincronizar_de_para(conn)
-
-    assert de_para_de(consultar, "201")["metodo"] != "HISTORICO"  # sobrou 1 viatura: abaixo do mínimo
-
-
-def test_nome_identico_prevalece_mas_avisa_quando_o_historico_discorda(consultar):
-    with engine.begin() as conn:
-        conn.exec_driver_sql("UPDATE tb_viatura SET fk_id_opm_unidade = 2 WHERE placa IN ('ABC1A23', 'ABC3C45')")
-        sincronizar_de_para(conn)
-
-    linha = de_para_de(consultar, "101")
-    assert (linha["situacao"], linha["metodo"], linha["fk_id_opm"]) == ("CONFIRMADO", "EXATO", 1)
-    assert linha["observacao"].startswith("Atenção: o histórico das viaturas indica 2º BATALHAO")
-
-
-def test_confirmar_sugestoes_do_historico_em_lote(client, consultar, viatura):
-    with engine.begin() as conn:
-        sincronizar_de_para(conn)
-        # Viatura da unidade 201 ainda sem a coluna nova: deve ser lotada na confirmação.
-        conn.exec_driver_sql("INSERT INTO tb_viatura (placa, modelo, status_operacional, cd_unidade_legado)"
-                             " VALUES ('NOV1A11', 'Ford Ranger', 'DISPONIVEL', '201')")
-
-    resp = client.post("/api/de-para/historico/confirmar", json={"usuario": "sgt.revisor"})
-
-    assert resp.status_code == 200
-    corpo = resp.json()
-    assert len(corpo["confirmadas"]) == 24 and "201" in corpo["confirmadas"]
-    assert corpo["movidas"] == ["NOV1A11"]
-    assert viatura("NOV1A11")["fk_id_opm_unidade"] == 12
-    linha = de_para_de(consultar, "201")
-    assert (linha["situacao"], linha["confirmado_por"]) == ("CONFIRMADO", "sgt.revisor")
-    assert consultar("SELECT count(*) AS n FROM tb_de_para_unidade WHERE metodo = 'HISTORICO'")[0]["n"] == 0
-
-
-def test_confirmar_historico_exige_revisor(client):
-    assert client.post("/api/de-para/historico/confirmar", json={}).status_code == 422

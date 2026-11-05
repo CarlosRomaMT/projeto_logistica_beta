@@ -175,7 +175,7 @@ input[type='checkbox'] { width: auto; }
 .resumo-carga .selo { min-width: 26px; text-align: center; font-size: 0.8rem; }
 /* IA no de-para (etapa 1) */
 .selo-ia { background: #efe9fb; color: #5b3a9e; }
-.selo-historico { background: #e3f1f6; color: #1d5c74; }
 .faixa-ia { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
 .faixa-ia .suave { flex: 1 1 260px; }
 .justificativa-ia { font-style: italic; }
+.alerta-ia { margin-top: 4px; padding: 4px 6px; border-radius: 4px; font-size: 0.78rem; background: #fff4e0; color: #8a5300; border: 1px solid #f0dca8; }

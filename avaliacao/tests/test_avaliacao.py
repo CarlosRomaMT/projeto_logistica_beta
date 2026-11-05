@@ -74,6 +74,14 @@ def test_metricas_do_comparativo():
     assert m[QWEN]["gabarito_nas_candidatas"] == 0.8
 
 
+def test_metricas_do_alerta_de_coerencia():
+    linhas = [dict(linha(1, "SEM_CORRESPONDENCIA", None, ia_id=1), ia_alerta=False),
+              dict(linha(2, "SEM_CORRESPONDENCIA", None, ia_id=9), ia_alerta=True),   # pegou um erro
+              dict(linha(3, "SEM_CORRESPONDENCIA", None, ia_id=3), ia_alerta=True)]   # acerto com alerta
+    m = calcular(linhas)
+    assert (m[QWEN]["alertas_em_erros"], m[QWEN]["alertas_em_acertos"]) == (1, 1)
+
+
 def test_metricas_sem_ia():
     m = calcular([linha(1, "CONFIRMADO", 1)], ia_executada=False)
     assert QWEN not in m and m[REGRA]["acuracia"] == 1.0

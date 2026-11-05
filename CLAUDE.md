@@ -160,11 +160,43 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
      se ≥ 0,75): OPM certa entre as 5 candidatas 83,1% → 85,9% (dev), 80,9% → 81,5% (teste); remedição da
      v6 na teste deu o mesmo resultado (112 acertos, 23 erros, 83,0%).
    - Suíte: logística 128, cautela 6, avaliação 16.
+   - **Desfeito no mesmo dia (item 12):** a camada de histórico e o botão de lote foram removidos.
+11. **Roteiro no Docker + revisão com o usuário** (mesmo dia): ambiente sobe com
+    `POSTGRES_PORTA_HOST=5435` (a 5433 é de outro projeto local, `app_web_conf_dos_sonhos-db-1`); se o
+    Postgres reaproveitar volume antigo, rodar `scripts.reset_demo`. `scripts/diagnostico_ia.py` mostra o
+    que a IA recebe/responde para unidades específicas.
+12. **Decisões do usuário em 05/11/2026 (fim do dia):**
+    - **Sem camada "histórico das viaturas":** no banco real, as viaturas com as duas colunas foram
+      preenchidas por scripts antigos de equiparação POR DESCRIÇÃO; não é evidência independente. Fluxo:
+      nome idêntico → Sugestão da IA (semelhança como plano B) → revisor → divergência vira proposta de
+      correção (etapa 3). Seed sem as unidades 201–224 (OPMs 12–35 continuam no cadastro como candidatas).
+      Os pares das viaturas continuam como **exemplos do RAG** (`de_para.historico_por_unidade`).
+      Consequência: o gabarito mede concordância com aqueles scripts, não a verdade.
+    - **Sem unidade antiga associada a OPM inativa no seed** (quase não ocorre em dev/prod): saíram a 105 e
+      a EFG1J11; OPM 5 extinta fica só para a demo do RF03; o tratamento continua no código, com teste
+      que monta o próprio cenário.
+    - **Hierarquia** (`sgpm.opm_tipo_orgao`): CR > BPM ≈ CIPM > CIA > PEL > NPM; **Regimento = Batalhão,
+      Esquadrão = Companhia, Esquadrão Independente = CIPM**. Tabelas de classificação têm registros
+      "Teste" com códigos aleatórios (9 OPMs vigentes apontam para eles).
+    - **Prompt v8 é o padrão** (v7 = subida de nível + "sempre a mais plausível"; v8 = v7 + equivalências):
+      teste 116 acertos / 30 erros (79,5%) contra v6 112 / 23 (83,0%); núcleo → pelotão 5 de 5 (eram 2).
+      Sem RAG vale `v8s`. Demo sem RAG: 103, 106, 108, 109 certas; 107 e 110 o revisor corrige; com RAG
+      as 6 certas. Evidência: `evidencias/ajuste_nivel_20261105.md`.
+    - Postgres do compose com porta configurável (`POSTGRES_PORTA_HOST`).
+    - Suíte: logística 125, cautela 6, avaliação 16.
+
+13. **Alerta de coerência** (mesmo dia, pedido do usuário após o 107 da demo): o modelo escolheu a
+    3ª CIA PM - 2º BPM e justificou "mesma localidade" (falso). `SeletorCandidatas.alerta_de_coerencia`:
+    termos distintivos da descrição (IDF ≥ 3, sem palavras de tipo `TERMOS_DE_TIPO`) ausentes na OPM
+    sugerida e presentes em outra candidata (≥ 80%) → `tb_de_para_unidade.ia_alerta`, "⚠ Verifique: ..." na
+    tela. Não descarta (descartar barrava 6 acertos e 6 erros na teste); com alerta: 9 de 142 sugestões,
+    5 erros e 4 acertos. Demo: alerta útil no 107, falso alarme no 103. Métricas `alertas_em_erros` /
+    `alertas_em_acertos` no comparativo. Suíte: logística 128, avaliação 17.
 
 ## Próximos passos
 
-1. Erros que restam na demo: 108 (núcleo que virou pelotão) e 110 (unidade elevada) — ver se mais exemplos
-   desses padrões no banco resolvem.
+1. 107 (núcleo citando a superior) e 110 (esquadrão elevado a regimento) sem RAG na demo: só se resolvem
+   com exemplos; considerar exemplos fictícios suficientes no seed se a demo precisar mostrar o RAG.
 2. Testar `qwen3:8b` (cabe nos 6 GB da RTX 3060) com `--modelo`, na mesma partição teste. Opcional:
    seletor de candidatas por embeddings locais — a OPM certa está entre as 5 candidatas em ~81% dos casos.
 3. Revisar à mão uma amostra dos erros do híbrido (separar erro do método × ruído do gabarito).

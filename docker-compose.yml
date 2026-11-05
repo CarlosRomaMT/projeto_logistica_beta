@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: frota
       POSTGRES_DB: frota
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORTA_HOST:-5433}:5432"  # outra porta se a 5433 estiver ocupada
     volumes:
       # Na primeira subida: cria frota_test, o schema e os dados fictícios.
       - ./db:/docker-entrypoint-initdb.d:ro
@@ -29,7 +29,7 @@ services:
       # "IA indisponível" e o de-para segue com as sugestões por semelhança.
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODELO: ${OLLAMA_MODELO:-qwen2.5:7b}
-      IA_VERSAO_PROMPT: ${IA_VERSAO_PROMPT:-v6}
+      IA_VERSAO_PROMPT: ${IA_VERSAO_PROMPT:-v8}
       IA_MAX_CANDIDATAS: "5"
       IA_TIMEOUT_S: "90"
       IA_HABILITADA: ${IA_HABILITADA:-true}

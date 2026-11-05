@@ -46,6 +46,7 @@ export interface DeParaRevisao {
   ia_confianca: number | null
   ia_justificativa: string | null
   ia_modelo: string | null
+  ia_alerta: string | null
 }
 
 export interface StatusIa {
@@ -53,12 +54,6 @@ export interface StatusIa {
   disponivel: boolean
   modelo: string
   motivo: string | null
-}
-
-export interface ResultadoConfirmacaoHistorico {
-  confirmadas: string[]
-  movidas: string[]
-  bloqueadas: { placa: string; status: string }[]
 }
 
 export interface ResultadoSugestaoIa {

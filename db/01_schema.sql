@@ -28,7 +28,7 @@ CREATE TABLE tb_de_para_unidade (
     fk_id_opm         INTEGER      REFERENCES tb_opm (id_opm),
     situacao          VARCHAR(20)  NOT NULL
         CHECK (situacao IN ('CONFIRMADO', 'PENDENTE', 'SEM_CORRESPONDENCIA')),
-    metodo            VARCHAR(15)  CHECK (metodo IN ('EXATO', 'HISTORICO', 'SIMILARIDADE', 'IA', 'MANUAL')),
+    metodo            VARCHAR(15)  CHECK (metodo IN ('EXATO', 'SIMILARIDADE', 'IA', 'MANUAL')),
     score             NUMERIC(4, 3),
     observacao        VARCHAR(200),
     confirmado_por    VARCHAR(60),
@@ -40,6 +40,8 @@ CREATE TABLE tb_de_para_unidade (
     ia_confianca      NUMERIC(4, 3),
     ia_justificativa  VARCHAR(200),
     ia_modelo         VARCHAR(60),
+    -- Verificação determinística da sugestão (ex.: a cidade da descrição está em outra candidata).
+    ia_alerta         VARCHAR(300),
     dt_ia             TIMESTAMPTZ
 );
 

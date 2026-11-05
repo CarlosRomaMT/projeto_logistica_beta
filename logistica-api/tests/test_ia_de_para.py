@@ -173,9 +173,10 @@ def test_versao_de_prompt_desconhecida_e_recusada():
 
 
 def test_exemplos_do_prompt_sao_ficticios_e_nao_citam_o_caso_da_demo():
-    # O caso BPTRAN da demonstração não pode estar "colado" no prompt.
+    # Os casos da demonstração (dados fictícios do seed) não podem estar "colados" no prompt.
+    casos_da_demo = ["BPTRAN", "MONTADO", "RPMON", "LAGO AZUL", "RIO CLARO", "SANTA AURORA", "CR 12"]
     for prompt, _ in ia.PROMPTS.values():
-        assert "BPTRAN" not in prompt
+        assert not [c for c in casos_da_demo if c in prompt.upper()]
 
 
 # RAG de exemplos
@@ -227,6 +228,34 @@ def test_so_a_versao_com_rag_envia_os_exemplos():
 
     assert "ASSOCIAÇÕES JÁ CONFIRMADAS" in enviados[0] and '"NPM Lagoa Seca - 7º BPM"' in enviados[0]
     assert "ASSOCIAÇÕES JÁ CONFIRMADAS" not in enviados[1]  # v2 ignora os exemplos
+
+
+# Alerta de coerência (determinístico)
+
+OPMS_ALERTA = [
+    Candidata(7, "NUCLEO PM - LAGOA BONITA", "NPM - LAGOA BONITA"),
+    Candidata(10, "3ª CIA PM - 2º BPM", "3ª CIA PM - 2º BPM"),
+    Candidata(12, "NUCLEO PM - PEDRA LISA", "NPM - PEDRA LISA"),
+] + [Candidata(100 + i, f"{i}º BATALHAO DE POLICIA MILITAR", f"{i}º BPM") for i in range(1, 60)]  # cadastro realista: com poucas OPMs nenhum termo é "raro"
+
+
+def test_alerta_quando_a_cidade_esta_em_outra_candidata():
+    seletor = SeletorCandidatas(OPMS_ALERTA)
+    descricao = "NPM LAGOA BONITA - 2º BPM"
+    candidatas = seletor.selecionar(descricao)
+
+    alerta = seletor.alerta_de_coerencia(descricao, 10, candidatas)  # a IA escolheu a companhia
+
+    assert alerta == ('Verifique: "LAGOA BONITA" não aparece na OPM sugerida (3ª CIA PM - 2º BPM), '
+                      "mas aparece em NUCLEO PM - LAGOA BONITA.")
+
+
+def test_sem_alerta_quando_a_escolha_tem_a_cidade_ou_ninguem_tem():
+    seletor = SeletorCandidatas(OPMS_ALERTA)
+    candidatas = seletor.selecionar("NPM LAGOA BONITA - 2º BPM")
+    assert seletor.alerta_de_coerencia("NPM LAGOA BONITA - 2º BPM", 7, candidatas) is None  # escolha certa
+    # Descrição sem termo distintivo (só tipo e número): nada a comparar.
+    assert seletor.alerta_de_coerencia("2º BPM", 10, seletor.selecionar("2º BPM")) is None
 
 
 # Seleção de candidatas (determinística)

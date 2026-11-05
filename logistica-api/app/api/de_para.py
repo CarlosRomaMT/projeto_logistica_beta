@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends
 from app.core.db import engine
 from app.schemas import (
     ConfirmacaoDeParaIn,
-    ConfirmacaoHistoricoOut,
     ConfirmacaoDeParaOut,
     DeParaOut,
     ExecucaoIaOut,
@@ -18,7 +17,6 @@ from app.services.de_para import (
     aplicar_de_para_na_contingencia,
     buscar_de_para,
     confirmar_de_para,
-    confirmar_sugestoes_do_historico,
     listar_de_para,
 )
 from app.services.de_para_ia import listar_execucoes, sugerir_com_ia
@@ -44,17 +42,6 @@ def obter_cliente_ia() -> Iterator[ia.ClienteOllama | None]:
 @router.get("", response_model=list[DeParaOut])
 def listar():
     return listar_de_para()
-
-
-# Declarada antes de /{cd_unidade}/confirmar para "historico" não ser lido como código de unidade.
-@router.post("/historico/confirmar", response_model=ConfirmacaoHistoricoOut)
-def confirmar_historico(dados: SugestaoIaIn):
-    """Revisor confirma de uma vez as sugestões pelo histórico das viaturas (tudo ou nada)."""
-    with engine.begin() as conn:
-        confirmadas = confirmar_sugestoes_do_historico(conn, dados.usuario)
-    return {"confirmadas": [c["cd_unidade_legado"] for c in confirmadas],
-            "movidas": [placa for c in confirmadas for placa in c["movidas"]],
-            "bloqueadas": [b for c in confirmadas for b in c["bloqueadas"]]}
 
 
 @router.post("/{cd_unidade}/confirmar", response_model=ConfirmacaoDeParaOut)

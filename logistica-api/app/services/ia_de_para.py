@@ -29,6 +29,14 @@ IA_TIMEOUT_S = float(os.environ.get("IA_TIMEOUT_S", "60"))
 IA_CONFIANCA_MINIMA = float(os.environ.get("IA_CONFIANCA_MINIMA", "0.6"))
 # 5 candidatas: na avaliação (partição dev), menos distratores = mais acertos e menos erros que 10 ou 20.
 IA_MAX_CANDIDATAS = int(os.environ.get("IA_MAX_CANDIDATAS", "5"))
+# Alerta de coerência: termo "distintivo" = IDF >= 3 no cadastro de OPMs; alerta quando outra candidata
+# cobre >= 80% do peso deles e a escolhida nenhum (calibrado na partição dev).
+ALERTA_IDF_MINIMO = 3.0
+ALERTA_COBERTURA_MINIMA = 0.8
+# Palavras de TIPO de unidade nunca são "distintivas" (o alerta olha localidade e especialidade).
+TERMOS_DE_TIPO = {"npm", "nucleo", "pel", "pelotao", "cia", "companhia", "cipm", "bpm", "btl", "batalhao",
+                  "cr", "comando", "regional", "esq", "esquadrao", "reg", "regimento", "ind", "independente",
+                  "pm", "policia", "militar", "sede"}
 # Depois de N falhas de comunicação seguidas, para de chamar o modelo (não trava o lote).
 IA_FALHAS_PARA_DESLIGAR = 3
 
@@ -160,6 +168,70 @@ Exemplos com unidades fictícias:""",
 )
 assert PROMPT_V6 != PROMPT_V2
 
+# v7s: v2 + hierarquia das OPMs (sgpm.opm_tipo_orgao) e MUDANÇA DE NÍVEL. Na v6, "NPM LAGO AZUL" foi
+# recusado diante de "1º PELOTAO PM - LAGO AZUL" (o modelo a chamou de "a mais próxima", mas o número e o
+# tipo não batiam) e "1º ESQ IND POLICIAMENTO MONTADO" diante do REGIMENTO. Também passa a apontar SEMPRE a
+# candidata mais plausível, deixando a dúvida na confiança (abaixo do mínimo a tela mostra "talvez X").
+# "s" = sem RAG; a v7 acrescenta os exemplos recuperados.
+PROMPT_V7S = PROMPT_V2
+for _antigo, _novo in (
+    ("AMB = Ambiental. Também omite acentos e muda maiúsculas.",
+     "AMB = Ambiental, ESQ = Esquadrão, IND = Independente. Também omite acentos e muda maiúsculas."),
+    ("""quase sempre são a mesma unidade, mesmo que o tipo tenha mudado (um núcleo pode ter virado pelotão).""",
+     """quase sempre são a mesma unidade, mesmo que o tipo tenha mudado. Para unidades sem cidade (sede, \
+especializada), o sinal forte é a especialidade (ex.: "trânsito", "guarda", "ambiental")."""),
+    ("""4. O número da própria unidade (o "2ª" de "2ª CIA") deve ser compatível; o número da unidade \
+superior pode não aparecer no nome da OPM.""",
+     """4. Hierarquia (do maior para o menor nível): Comando Regional (CR) > Batalhão (BPM) e Companhia \
+Independente (CIPM) > Companhia (CIA) > Pelotão (PEL) > Núcleo (NPM). Unidades SOBEM DE NÍVEL com o \
+tempo: núcleo vira pelotão; companhia ou esquadrão vira batalhão ou regimento. Quando isso acontece, o \
+TIPO e o NÚMERO mudam (o núcleo sem número vira "1º Pelotão"): mesma localidade ou mesma especialidade em \
+um nível acima é a mesma unidade. Só exija número compatível quando o tipo for o mesmo (o "2ª" de "2ª CIA").
+5. Na lista de candidatas, a abreviatura pode citar a unidade superior DA OPM (ex.: "1º PEL PM - 7º BPM" \
+é um pelotão subordinado ao 7º BPM). Isso descreve a OPM; não é motivo para recusá-la."""),
+    ("""5. Responda id_opm null só se nenhuma candidata for plausivelmente a mesma unidade. Havendo uma \
+plausível, escolha-a e expresse a dúvida na confianca (0 a 1).
+6. Use somente""",
+     """6. Indique SEMPRE a candidata mais plausível e use a confianca para a dúvida (abaixo de 0,6 = dúvida \
+forte; quem decide é um revisor humano). Responda id_opm null só se NENHUMA candidata tiver localidade, \
+especialidade ou tipo em comum com a descrição.
+7. Use somente"""),
+    ("""- "BPMTUR" → "BATALHAO DE POLICIA MILITAR DE TURISMO" (sigla que junta palavras).""",
+     """- "BPMTUR" → "BATALHAO DE POLICIA MILITAR DE TURISMO" (sigla que junta palavras).
+- "CIA IND CANIL" → "BATALHAO DE POLICIA MILITAR COM CAES" (a companhia subiu a batalhão; a especialidade \
+decide)."""),
+):
+    assert PROMPT_V7S.count(_antigo) == 1, _antigo[:60]
+    PROMPT_V7S = PROMPT_V7S.replace(_antigo, _novo)
+
+# v7: v7s + RAG de exemplos (mesma regra da v6).
+PROMPT_V7 = PROMPT_V7S.replace(
+    """
+
+Exemplos com unidades fictícias:""",
+    """
+8. Quando vier a lista ASSOCIAÇÕES JÁ CONFIRMADAS, use-a para entender como o cadastro antigo desta \
+instituição costuma ser escrito e a que tipo de OPM ele corresponde (siglas, unidade superior após o \
+hífen, unidades que subiram de nível). É só referência de padrão: a resposta continua sendo um id_opm da \
+lista de candidatas.
+
+Exemplos com unidades fictícias:""",
+)
+assert PROMPT_V7 != PROMPT_V7S
+
+# v8: v7 + equivalências informadas pela gestão (05/11/2026): Regimento equivale a Batalhão e Esquadrão a
+# Companhia (Esquadrão Independente a Companhia Independente). Sem isso o modelo não reconhecia um
+# esquadrão independente elevado a regimento como subida de nível.
+_HIERARQUIA_V7 = """4. Hierarquia (do maior para o menor nível): Comando Regional (CR) > Batalhão (BPM) e Companhia \
+Independente (CIPM) > Companhia (CIA) > Pelotão (PEL) > Núcleo (NPM)."""
+_HIERARQUIA_V8 = """4. Hierarquia (do maior para o menor nível): Comando Regional (CR) > Batalhão (BPM) e Companhia \
+Independente (CIPM) > Companhia (CIA) > Pelotão (PEL) > Núcleo (NPM). Equivalências: Regimento (REG) \
+= nível de Batalhão; Esquadrão (ESQ) = nível de Companhia; Esquadrão Independente (ESQ IND) = nível de \
+Companhia Independente."""
+assert PROMPT_V7S.count(_HIERARQUIA_V7) == 1 and PROMPT_V7.count(_HIERARQUIA_V7) == 1
+PROMPT_V8S = PROMPT_V7S.replace(_HIERARQUIA_V7, _HIERARQUIA_V8)
+PROMPT_V8 = PROMPT_V7.replace(_HIERARQUIA_V7, _HIERARQUIA_V8)
+
 PROMPTS = {
     "v1": (PROMPT_V1, ESQUEMA_RESPOSTA),
     "v2": (PROMPT_V2, ESQUEMA_RESPOSTA),
@@ -167,18 +239,25 @@ PROMPTS = {
     "v4": (PROMPT_V4, ESQUEMA_RESPOSTA),
     "v5": (PROMPT_V5, ESQUEMA_RESPOSTA),
     "v6": (PROMPT_V6, ESQUEMA_RESPOSTA),
+    "v7s": (PROMPT_V7S, ESQUEMA_RESPOSTA),
+    "v7": (PROMPT_V7, ESQUEMA_RESPOSTA),
+    "v8s": (PROMPT_V8S, ESQUEMA_RESPOSTA),
+    "v8": (PROMPT_V8, ESQUEMA_RESPOSTA),
 }
 # Versões que recebem exemplos recuperados (RAG). As demais ignoram os exemplos.
-VERSOES_COM_EXEMPLOS = {"v6"}
+VERSOES_COM_EXEMPLOS = {"v6", "v7", "v8"}
 IA_MAX_EXEMPLOS = int(os.environ.get("IA_MAX_EXEMPLOS", "5"))
 # Abaixo disso o banco não é representativo e o RAG atrapalha (com 4 pares, todos "Nº BPM - cidade",
 # o modelo aprendeu "a cidade manda" e errou a 103 nos dados fictícios). Sem exemplos, v6 ≈ v2.
 IA_MIN_EXEMPLOS_RAG = int(os.environ.get("IA_MIN_EXEMPLOS_RAG", "20"))
 # Versão com RAG chamada SEM exemplos usa exatamente esta (a medida sem RAG), não um texto intermediário.
 VERSAO_SEM_EXEMPLOS = "v2"
-# v6 (v2 + RAG de exemplos) é o padrão: na partição teste, híbrido de 74,1% para 83,0% de precisão
-# (evidencias/rag_exemplos_20261105.md). v2 foi escolhida antes na partição dev.
-IA_VERSAO_PROMPT = os.environ.get("IA_VERSAO_PROMPT", "v6")
+# Versão usada quando uma versão com RAG roda sem exemplos suficientes.
+VERSAO_SEM_RAG = {"v6": "v2", "v7": "v7s", "v8": "v8s"}
+# v8 é o padrão: na partição teste, híbrido com 116 acertos e 30 erros (79,5%), contra 112/23 (83,0%) da
+# v6; resolve as subidas de nível (núcleo → pelotão: 5 de 5, eram 2). Escolha da gestão: mais acertos e
+# menos casos sem sugestão, já que toda sugestão passa pelo revisor. v6 continua disponível.
+IA_VERSAO_PROMPT = os.environ.get("IA_VERSAO_PROMPT", "v8")
 PROMPT_SISTEMA = PROMPT_V1  # compatibilidade
 
 
@@ -236,6 +315,38 @@ class SeletorCandidatas:
         total = len(opms)
         self._idf = {t: math.log((total + 1) / (f + 0.5)) for t, f in frequencia.items()}
         self._idf_padrao = math.log((total + 1) / 0.5)  # termo que nenhuma OPM tem
+
+    def alerta_de_coerencia(self, descricao: str, id_escolhida: int, candidatas: list[Candidata],
+                            idf_minimo: float = ALERTA_IDF_MINIMO,
+                            cobertura_minima: float = ALERTA_COBERTURA_MINIMA) -> str | None:
+        """Verificação determinística da sugestão da IA (a justificativa do modelo não é prova).
+
+        Termos distintivos da descrição (raros no cadastro, como o nome da cidade) que não aparecem na
+        OPM escolhida, mas aparecem em outra candidata: devolve um alerta para o revisor. Não descarta a
+        sugestão: na avaliação com dados reais, descartar barrava tantos acertos quanto erros.
+        """
+        termos_por_id = {o.id_opm: t for o, t in zip(self.opms, self._termos)}
+        distintivos = {t for t in set(tokens(descricao))
+                       if not t.isdigit() and t not in TERMOS_DE_TIPO
+                       and self._idf.get(t, self._idf_padrao) >= idf_minimo}
+        escolhida = termos_por_id.get(id_escolhida, set())
+        if not distintivos or distintivos & escolhida:
+            return None
+        peso_total = sum(self._idf.get(t, self._idf_padrao) for t in distintivos)
+        melhor, cobertura = None, 0.0
+        for c in candidatas:
+            if c.id_opm == id_escolhida:
+                continue
+            comum = distintivos & termos_por_id.get(c.id_opm, set())
+            valor = sum(self._idf.get(t, self._idf_padrao) for t in comum) / peso_total
+            if valor > cobertura:
+                melhor, cobertura = c, valor
+        if melhor is None or cobertura < cobertura_minima:
+            return None
+        nome_escolhida = next((c.nome for c in candidatas if c.id_opm == id_escolhida), str(id_escolhida))
+        palavras = " ".join(t.upper() for t in tokens(descricao) if t in distintivos)
+        return (f'Verifique: "{palavras}" não aparece na OPM sugerida ({nome_escolhida}), '
+                f"mas aparece em {melhor.nome}.")[:300]
 
     def selecionar(self, descricao: str, limite: int = IA_MAX_CANDIDATAS) -> list[Candidata]:
         alvo = set(tokens(descricao))
@@ -403,7 +514,7 @@ class ClienteOllama:
         if self.desligado:
             return RespostaIA(INDISPONIVEL, motivo="DISJUNTOR_ABERTO")
         self._versao_atual = (self.versao_prompt if not self.usa_exemplos or exemplos
-                              else VERSAO_SEM_EXEMPLOS)
+                              else VERSAO_SEM_RAG.get(self.versao_prompt, VERSAO_SEM_EXEMPLOS))
         prompt, esquema = PROMPTS[self._versao_atual]
         corpo = {
             "model": self.modelo,

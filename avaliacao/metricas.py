@@ -84,6 +84,14 @@ def calcular(linhas: list[dict], ia_executada: bool = True) -> dict:
             sum(1 for linha in no_top if sugestao_qwen(linha) == linha["gabarito"]) / len(no_top), 3) if no_top else 0.0,
     })
 
+    # Alerta de coerência (determinístico): em quantas sugestões aceitas ele aparece e se pegou erros.
+    if any("ia_alerta" in linha for linha in linhas):
+        aceitas = [linha for linha in linhas if linha["ia_resultado"] == "ACEITA"]
+        resultado[QWEN]["alertas_em_erros"] = sum(
+            1 for linha in aceitas if linha.get("ia_alerta") and linha["ia_id"] != linha["gabarito"])
+        resultado[QWEN]["alertas_em_acertos"] = sum(
+            1 for linha in aceitas if linha.get("ia_alerta") and linha["ia_id"] == linha["gabarito"])
+
     # Onde a IA agrega: casos que a regra atual não acertava.
     regra_errava = [i for i, linha in enumerate(linhas) if regra[i] != linha["gabarito"]]
     resultado["ganho_do_hibrido"] = {

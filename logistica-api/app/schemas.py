@@ -59,12 +59,7 @@ class DeParaOut(BaseModel):
     ia_justificativa: str | None = None
     ia_modelo: str | None = None
     dt_ia: datetime | None = None
-
-
-class ConfirmacaoHistoricoOut(BaseModel):
-    confirmadas: list[str]
-    movidas: list[str]
-    bloqueadas: list["BloqueioOut"]
+    ia_alerta: str | None = None
 
 
 class SugestaoIaIn(BaseModel):

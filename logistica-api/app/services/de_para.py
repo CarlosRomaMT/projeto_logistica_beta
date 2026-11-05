@@ -44,8 +44,10 @@ LIMIAR_SUGESTAO = 0.75
 # Se a segunda melhor OPM ficar a menos disso da primeira, a sugestão é marcada como ambígua.
 MARGEM_AMBIGUIDADE = 0.05
 
-# Histórico dos veículos: UPM cujas viaturas (já com a coluna nova, nunca movimentadas pelo sistema novo)
-# estão quase todas numa OPM. Evidência forte, mas com ruído no banco real: vira SUGESTÃO, não confirmação.
+# Pares unidade antiga -> OPM das viaturas que já têm as duas colunas. No banco real elas foram
+# preenchidas por scripts antigos de equiparação POR DESCRIÇÃO: não são evidência independente para
+# sugerir a OPM (seria circular) e por isso não há camada "histórico" no de-para. Servem só como
+# exemplos de padrão para o RAG (como a instituição associou os nomes).
 HISTORICO_MINIMO_VIATURAS = 2
 HISTORICO_PUREZA_MINIMA = 0.8
 
@@ -120,7 +122,7 @@ class Historico:
 
 def historico_por_unidade(conn: Connection, pureza_minima: float = HISTORICO_PUREZA_MINIMA,
                           minimo_viaturas: int = HISTORICO_MINIMO_VIATURAS) -> dict[str, Historico]:
-    """OPM dominante de cada unidade antiga, pelas viaturas que já têm as duas colunas.
+    """OPM dominante de cada unidade antiga, pelas viaturas que já têm as duas colunas (exemplos do RAG).
 
     Só conta viatura nunca movimentada pelo sistema novo (depois da implantação o legado fica congelado e
     uma transferência legítima não diz nada sobre a unidade antiga) e fora da OPM 0. Só devolve unidades
@@ -146,15 +148,11 @@ def historico_por_unidade(conn: Connection, pureza_minima: float = HISTORICO_PUR
     return {linha["cd"].strip(): Historico(linha["opm"], linha["nome"], linha["n"], linha["total"]) for linha in linhas}
 
 
-def texto_historico(h: Historico) -> str:
-    return f"{h.viaturas_na_opm} de {h.viaturas_total} viaturas desta unidade já estão nesta OPM."
-
-
 def sincronizar_de_para(conn: Connection) -> int:
     """Cria o de-para das unidades antigas que ainda não têm um. Devolve quantas criou.
 
-    Camadas: nome idêntico (confirma) → histórico dos veículos (sugere) → semelhança de nome (sugere).
-    A IA entra depois, sob demanda, só onde não há sugestão pelo histórico.
+    Camadas: nome idêntico (confirma) → semelhança de nome (sugere). A IA entra depois, sob demanda,
+    nas unidades que aguardam decisão; o revisor confirma.
     Decisões já gravadas (inclusive as manuais) nunca são sobrescritas. Pode rodar em paralelo
     (subida da API com vários workers, carga): quem chegar depois ignora o que já foi criado.
     """
@@ -170,18 +168,10 @@ def sincronizar_de_para(conn: Connection) -> int:
         ORDER BY u.cd_unidade
     """)).mappings().all()
 
-    historico = historico_por_unidade(conn)
-
     criadas = 0
     for unidade in novas:
         sugestao = sugerir_opm(unidade["ds_unidade"], opms)
         observacao = "Ambígua: outra OPM com pontuação próxima" if sugestao.ambigua else None
-        h = historico.get(unidade["cd_unidade"].strip())
-        if h is not None and sugestao.situacao == SITUACAO_CONFIRMADO and h.id_opm != sugestao.id_opm:
-            observacao = f"Atenção: o histórico das viaturas indica {h.nome_opm} ({texto_historico(h)})"[:200]
-        elif h is not None and sugestao.situacao != SITUACAO_CONFIRMADO:
-            sugestao = Sugestao(SITUACAO_PENDENTE, h.id_opm, "HISTORICO", round(h.pureza, 3))
-            observacao = texto_historico(h)
         criadas += conn.execute(
             text("""
                 INSERT INTO tb_de_para_unidade
@@ -297,29 +287,12 @@ def aplicar_de_para_na_contingencia(conn: Connection, cd_unidade: str, usuario: 
     return {"movidas": movidas, "bloqueadas": bloqueadas}
 
 
-def confirmar_sugestoes_do_historico(conn: Connection, usuario: str) -> list[dict]:
-    """Decisão humana em lote: confirma todas as sugestões pelo histórico e lota as viaturas na hora.
-
-    Mesma transação para tudo (quem chama usa engine.begin()): se uma falhar, nada é gravado.
-    """
-    pendentes = conn.execute(text("""
-        SELECT cd_unidade_legado, fk_id_opm FROM tb_de_para_unidade
-        WHERE situacao = :pendente AND metodo = 'HISTORICO' ORDER BY cd_unidade_legado FOR UPDATE
-    """), {"pendente": SITUACAO_PENDENTE}).mappings().all()
-    resultado = []
-    for p in pendentes:
-        anterior = confirmar_de_para(conn, p["cd_unidade_legado"], p["fk_id_opm"], usuario)
-        aplicado = aplicar_de_para_na_contingencia(conn, p["cd_unidade_legado"], usuario, anterior)
-        resultado.append({"cd_unidade_legado": p["cd_unidade_legado"], **aplicado})
-    return resultado
-
-
 SQL_DE_PARA = """
     SELECT d.cd_unidade_legado, d.ds_unidade_legado, d.situacao, d.metodo, d.score,
            d.fk_id_opm AS id_opm, o.nome AS nome_opm, d.observacao,
            d.confirmado_por, d.dt_confirmacao, o.status AS status_opm,
            d.ia_resultado, d.ia_id_opm, oi.nome AS ia_nome_opm, d.ia_confianca, d.ia_justificativa,
-           d.ia_modelo, d.dt_ia,
+           d.ia_modelo, d.dt_ia, d.ia_alerta,
            (SELECT count(*) FROM tb_viatura v
             WHERE v.cd_unidade_legado = d.cd_unidade_legado
               AND v.status_operacional <> 'BAIXADA'

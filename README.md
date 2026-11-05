@@ -22,28 +22,26 @@ docker compose up -d --build
 | API Cautela (Swagger) | http://localhost:8002/docs |
 | PostgreSQL | `localhost:5433` (usuário/senha/banco: `frota`) |
 
-O banco começa no estado **"antes da correção"**: 20 viaturas ativas só com a coluna antiga, e 48
-viaturas de 24 unidades **já parcialmente migradas** (as duas colunas preenchidas, como os 6.656 veículos
-assim no banco de desenvolvimento), que formam o histórico usado pelo de-para.
+O banco começa no estado **"antes da correção"**: 19 viaturas ativas só com a coluna antiga.
 
 **Dados fictícios, padrões reais.** Cidades e unidades são inventadas, mas os casos reproduzem o que o
 diagnóstico encontrou no banco de desenvolvimento (`evidencias/diagnostico_real_*.md`): OPMs em
 maiúsculas e sem acento com abreviatura própria (como `sgpm.opm`), unidade antiga citando a superior
 depois do hífen, núcleo que virou pelotão, sede de comando regional, sigla, unidade elevada a regimento,
-OPM extinta, legado vazio ou inexistente e a divergência entre a coluna antiga e a nova:
+legado vazio ou inexistente e a divergência entre a coluna antiga e a nova. (Unidade antiga associada a
+OPM inativa quase não ocorre no banco real e ficou fora dos dados; a OPM 5, extinta, existe só para a demo
+do bloqueio do RF03. O tratamento continua no código e tem teste próprio.)
 
 | Unidade antiga | OPM correta | Como a regra atual classifica |
 |---|---|---|
 | 101 `1º BPM - SANTA AURORA` e 111 `PRIMEIRO BATALHAO PM SANTA AURORA` | 1º BATALHAO ... - SANTA AURORA | nome igual (automático) |
 | 102 `2 B.P.M. NOVA PRIMAVERA` / 104 `1ª CIA IND PM SERRA DOURADA` | OPM 2 / OPM 4 | nome igual (automático) |
 | 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM | semelhança 89% (sugestão) |
-| 105 `5º BPM - BOA VISTA DO SUL` | OPM 5, **extinta** | nome igual, mas OPM inativa |
 | 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO | sem sugestão (sigla) |
 | 107 `NPM RIO CLARO DO NORTE - 2º BPM` | NUCLEO PM - RIO CLARO DO NORTE | sem sugestão (número é da superior) |
 | 108 `NPM LAGO AZUL` | 1º PELOTAO PM - LAGO AZUL | sem sugestão (núcleo virou pelotão) |
 | 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL | sem sugestão |
 | 110 `1º ESQ IND POLICIAMENTO MONTADO` | REGIMENTO DE POLICIAMENTO MONTADO | sem sugestão (unidade elevada) |
-| 201 a 224 (ex.: `NPM AGUA CLARA DO SUL - 3º BPM`, `CR 3 - SEDE`, `BPMA`) | a OPM onde já estão as 2 viaturas | **sugestão pelo histórico** |
 
 ## Como a unidade antiga vira OPM
 
@@ -59,12 +57,11 @@ SANTA AURORA").
 3. **Classificação** em `tb_de_para_unidade`, feita **na subida da `logistica-api`** (e de novo pela
    carga e pelo `de_para gerar`) para as unidades antigas que ainda não têm de-para:
    - **CONFIRMADO / EXATO:** nomes iguais após normalizar, com uma única OPM. É o único caso automático.
-   - **PENDENTE / HISTORICO:** as viaturas da unidade que já têm a coluna nova (≥ 2, nunca movimentadas
-     pelo sistema novo) estão em ≥ 80% numa mesma OPM ativa. É a evidência mais forte (no banco de
-     desenvolvimento resolve 133 das 172 viaturas operacionais invisíveis), mas tem ruído real, então é
-     **sugestão**, com a evidência na tela ("2 de 2 viaturas desta unidade já estão nesta OPM"). Se o nome
-     é idêntico mas o histórico discorda, a confirmação automática fica com um aviso.
    - **PENDENTE / SIMILARIDADE:** semelhança ≥ 0,75. Fica como sugestão até alguém confirmar.
+   - Não há camada "histórico das viaturas": no banco real, as viaturas que já têm as duas colunas foram
+     preenchidas por scripts antigos de equiparação por descrição, então não são evidência independente
+     (seria circular). Esses pares servem só como **exemplos do RAG**. As divergências entre a OPM atual da
+     viatura e a associação confirmada viram **proposta de correção** (etapa 3).
    - **SEM_CORRESPONDENCIA:** nada parecido (ex.: a sigla "BPTRAN").
 4. **Validação humana** (aba **Implantação**, etapa 1, que já abre com as sugestões, ou por CSV:
    `python -m scripts.de_para gerar` exporta, o revisor preenche `id_opm_confirmada` e roda
@@ -105,7 +102,7 @@ lotação → correção das divergências → lotar as viaturas que ficaram na 
 `logistica-api` cria as sugestões ao subir.
 
 ### 1. Mostrar o problema
-Abra http://localhost:5173. Na Logística, 22 viaturas (20 ativas e 2 baixadas) aparecem como
+Abra http://localhost:5173. Na Logística, 21 viaturas (19 ativas e 2 baixadas) aparecem como
 *"Sem unidade: invisível no Cautela"*. No Cautela, o `p4.opm2` não vê nenhuma viatura.
 
 Marque **"Demonstração: mostrar unidade do cadastro antigo"** para ver, ao lado de cada viatura, a
@@ -119,17 +116,12 @@ o legado (RNF02).
 Abra a aba **Implantação**. Enquanto o **Revisor** no topo estiver vazio, um aviso pede o
 preenchimento; clicar numa ação sem ele leva até o campo (sem login no MVP, o nome fica registrado em
 cada decisão). Na tela, o termo técnico "de-para" não aparece: o painel *Associar as unidades antigas às
-OPMs* mostra "31 unidade(s) aguardando decisão":
-- As 24 com **Sugestão pelo histórico** (selo azul, com a evidência) podem ser conferidas e confirmadas
-  de uma vez em **Confirmar sugestões do histórico (24)** (decisão humana em lote, tudo ou nada); restam 7.
+OPMs* mostra "6 unidade(s) aguardando decisão":
 - 103 já vem com a sugestão *2ª CIA PM - 1º BPM* (semelhança): clique em **Confirmar**.
   Esperado: "Viaturas lotadas nela: CDE1F11, CDE2G22".
 - 106 a 110 não têm sugestão por semelhança: use **Sugerir com IA** (abaixo) ou busque a OPM
   (a busca ignora acentos e aceita a abreviatura: "Trânsito", "Lago Azul", "RPMON") e confirme. Cada
   confirmação lota a viatura da unidade (GHI2O22, KLM1A11, KLM2B22, KLM3C33, KLM4D44).
-- 105 (5º BPM EXTINTO) foi associada automaticamente a uma OPM **inativa** e por isso aparece como
-  pendente ("OPM inativa: escolha outra"). Se ninguém souber qual OPM sucedeu a unidade, deixe-a: a
-  viatura dela (EFG1J11) vai para a OPM 0 e é lotada na etapa 4.
 
 **Com IA (Qwen local):** a faixa acima da tabela mostra se a IA está pronta ("IA local pronta
 (qwen2.5:7b)") ou indisponível. Clique em **Sugerir com IA**: o modelo analisa só as unidades que
@@ -141,20 +133,28 @@ confirmadas aparece "sugestão da IA aceita"). Cada chamada fica em `tb_execucao
 o Ollama e clique de novo: a tela avisa "IA indisponível" e as sugestões por semelhança continuam.
 Requer Ollama na máquina (`ollama pull qwen2.5:7b`); a API no Docker o acessa por
 `host.docker.internal:11434` (`OLLAMA_URL`, `OLLAMA_MODELO`, `IA_HABILITADA` no `docker-compose.yml`).
-Resultado observado com `qwen2.5:7b` e o prompt v6 nos dados fictícios: as 4 associações por nome idêntico
-mais os 24 pares do histórico dão 28 exemplos (≥ 20), então o **RAG fica ligado** e cada sugestão registra
-"qwen2.5:7b (prompt v6)". Mostra na demo
-tanto o ganho quanto o motivo da validação humana:
+Resultado observado com `qwen2.5:7b` e o prompt padrão `v8` nos dados fictícios. O seed só tem 4
+associações confirmadas (< 20), então o RAG fica desligado e vale a `v8s`, registrada em cada sugestão
+como "qwen2.5:7b (prompt v8s)". Mostra na demo tanto o ganho quanto o motivo da validação humana:
 
-| Unidade | Sugestão da IA | |
-|---|---|---|
-| 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM (concorda com a semelhança) | ✓ |
-| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO (confiança 1,0) | ✓ |
-| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | NUCLEO PM - RIO CLARO DO NORTE (0,9). **Sem o RAG errava** (3ª CIA PM - 2º BPM, a superior) | ✓ |
-| 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL (confiança 1,0) | ✓ |
-| 108 `NPM LAGO AZUL` / 110 `1º ESQ IND ...` | "nenhuma corresponde" | o revisor busca e escolhe |
+| Unidade | Sugestão da IA | Alerta de coerência | |
+|---|---|---|---|
+| 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM (concorda com a semelhança) | ⚠ "AURORA" está no 1º BPM (falso alarme) | ✓ o revisor confere e mantém |
+| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO | — | ✓ |
+| 108 `NPM LAGO AZUL` | 1º PELOTAO PM - LAGO AZUL (**subida de nível**: núcleo virou pelotão) | — | ✓ |
+| 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL | — | ✓ |
+| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | 3ª CIA PM - 2º BPM: **errada** (confundiu com a superior; a justificativa do modelo, "mesma localidade", é falsa) | ⚠ "RIO CLARO" está no NUCLEO PM - RIO CLARO DO NORTE | ✗ o revisor troca |
+| 110 `1º ESQ IND POLICIAMENTO MONTADO` | "nenhuma corresponde" | — | o revisor busca "Montado" e escolhe o Regimento |
 
-Para mostrar o efeito do RAG ao vivo, suba a API com `IA_VERSAO_PROMPT=v2` e compare a 107.
+**Alerta de coerência** (determinístico, `SeletorCandidatas.alerta_de_coerencia`): se os termos distintivos
+da descrição (raros no cadastro, como o nome da cidade; palavras de tipo como NPM/CIA/BPM não contam) não
+aparecem na OPM sugerida mas aparecem em outra candidata, a linha mostra "⚠ Verifique: ...". A justificativa
+do modelo não é prova (no 107 ele afirma "mesma localidade" sem ser). O alerta **não descarta**: nos dados
+reais, descartar barrava tantos acertos quanto erros; avisando, sinaliza 5 dos 28 erros da partição teste
+com 4 falsos alarmes em 142 sugestões.
+
+Com o RAG ligado (≥ 20 pares de exemplo, como no banco real, onde há ~265 pares das viaturas já
+preenchidas), as 6 saem certas (`scripts/diagnostico_ia.py`, `evidencias/ajuste_nivel_20261105.md`).
 
 São os mesmos padrões de erro medidos no banco real (`evidencias/ajuste_prompt_20261105.md`). O
 resultado pode variar com outra versão do modelo; o modelo e a versão do prompt ficam gravados em cada
@@ -166,7 +166,7 @@ OPM, Confirmar avisa "Escolha a OPM correta da unidade … antes de confirmar".
 
 Cada viatura lotada passa pelo serviço de movimentação (validação do RF03, histórico com tipo
 `CORRECAO_DE_PARA`). Na implantação, viatura cautelada também é lotada. OPM inativa é recusada com a
-mensagem oficial. Confirmando 103 e 106 a 110, a etapa 2 cai de 20 para 13 viaturas aguardando.
+mensagem oficial. Confirmando 103 e 106 a 110, a etapa 2 cai de 19 para 12 viaturas aguardando.
 
 **Alternativa por CSV** (revisão em massa no Excel, passos 2a e 2b):
 
@@ -196,7 +196,7 @@ nada: com uma OPM inexistente ou inativa, nada é gravado. Decisões manuais nun
 novo `gerar`.
 
 ### 3. Etapa 2: carga da lotação
-No painel *Carga da lotação* ("13 viatura(s) aguardando"), clique em **Simular**: aparecem os números e
+No painel *Carga da lotação* ("12 viatura(s) aguardando"), clique em **Simular**: aparecem os números e
 a lista de inconformidades, sem gravar nada. Depois clique em **Executar carga** (o botão só libera após
 a simulação, e a tela avisa isso; sem revisor, o clique leva até o campo). Aplica nas viaturas **só** o de-para confirmado; o resto vai
 para a OPM 0.
@@ -204,19 +204,19 @@ para a OPM 0.
 Pelo terminal: `docker compose exec -T logistica-api python -m scripts.migrar_opm_legado --dry-run` e
 depois `... migrar_opm_legado --usuario sgt.revisor`.
 
-Esperado (com a 105 pendente): o resumo separa **7 lotadas na OPM correta** (listadas por placa e OPM,
-inclusive a BCD2E22, cautelada), **6 na OPM 0** e **1 divergência** (as 7 que precisam de atenção aparecem
+Esperado: o resumo separa **7 lotadas na OPM correta** (listadas por placa e OPM,
+inclusive a BCD2E22, cautelada), **5 na OPM 0** e **1 divergência** (as 6 que precisam de atenção aparecem
 com o motivo), e o link
 **Baixar relatório das que precisam de atenção (CSV)** (`relatorios/inconformidades_<data>.csv`, com a coluna
 `executado_por`). As outras telas recarregam sozinhas:
 - nenhuma viatura ativa fica sem OPM; a `ABC1A23` aparece para o `p4.opm1`, a `CDE1F11` para o `p4.opm3`;
   a `GHI2O22` vai para o Batalhão de Trânsito, que não tem P4 cadastrado nos dados fictícios;
-- as 6 sem associação utilizável (OPM extinta, legado vazio, código inexistente) ficam na
+- as 5 sem associação utilizável (legado vazio, código inexistente) ficam na
   *OPM 0 - Sem ligação* (visíveis para `p4.contingencia`) e são resolvidas na etapa 4;
 - a `JKL1S11`, cujo legado diverge da coluna nova, não é alterada: vira **1 proposta de correção**
   (etapa 3).
 
-Se a carga rodar antes da etapa 1, 13 viaturas vão para a OPM 0; confirmar o de-para depois as tira de
+Se a carga rodar antes da etapa 1, 12 viaturas vão para a OPM 0; confirmar o de-para depois as tira de
 lá na hora, sem rodar a carga de novo. O resultado da carga é um retrato daquele momento ("gravada às
 HH:MM"); o que falta resolver aparece nas etapas 3 e 4, que se atualizam sozinhas.
 
@@ -239,7 +239,7 @@ o `p4.opm2`.
 O painel *Lotar as viaturas que ficaram sem OPM* lista as viaturas da OPM 0 com o motivo e, quando há,
 a OPM sugerida. Escolha a OPM e clique em **Lotar** (histórico com tipo `LOTACAO_IMPLANTACAO`). Viatura
 cautelada aparece com o selo "Cautelada: em uso" e também pode ser lotada; o mesmo endpoint só aceita
-viatura que está na OPM 0, para não contornar o RF03 da operação. Resolver a unidade na etapa 1 (ex.: associar a 105) tira da lista,
+viatura que está na OPM 0, para não contornar o RF03 da operação. Resolver a unidade na etapa 1 (ex.: associar a 108) tira da lista,
 de uma vez, todas as viaturas dela.
 
 ### 6. Movimentar pela tela nova
@@ -318,11 +318,16 @@ as 5 OPMs vigentes mais parecidas (seleção determinística por termos raros, e
 saída obrigatória em JSON Schema, temperatura 0 e seed fixa. O prompt é versionado (`IA_VERSAO_PROMPT`,
 padrão `v2`; `--prompt` no comparativo) e a escolha da versão e do número de candidatas foi feita na
 partição dev do gabarito e medida na partição teste (`evidencias/ajuste_prompt_20261105.md`: híbrido de
-43,9% para 63,7% de acurácia e de 63,9% para 74,1% de precisão). O padrão atual é a `v6`, que soma o
+43,9% para 63,7% de acurácia e de 63,9% para 74,1% de precisão). Depois veio a `v6`, que soma o
 **RAG de exemplos**: as associações já confirmadas mais parecidas na forma entram no prompt como
 referência (`evidencias/rag_exemplos_20261105.md`: na partição teste, precisão de 74,1% para 83,0% e erros
 de 35 para 23). Com menos de 20 associações confirmadas (`IA_MIN_EXEMPLOS_RAG`) o RAG fica desligado e a
-chamada usa exatamente o prompt `v2`, registrado na sugestão. A resposta é validada: JSON no contrato, id
+chamada usa a versão sem RAG (`v2` para a `v6`, `v8s` para a `v8`), registrada na sugestão. O padrão
+atual é a **`v8`** = v6 + hierarquia das OPMs (`sgpm.opm_tipo_orgao`), subida de nível (núcleo → pelotão;
+esquadrão/companhia → regimento/batalhão, com Regimento = Batalhão e Esquadrão = Companhia) e "indique
+sempre a candidata mais plausível" (`evidencias/ajuste_nivel_20261105.md`: na partição teste, 116 acertos
+e 30 erros contra 112 e 23 da v6; núcleo → pelotão 5 de 5, eram 2; `IA_VERSAO_PROMPT=v6` volta à versão de
+maior precisão). A resposta é validada: JSON no contrato, id
 dentro das candidatas enviadas (barra alucinação), confiança entre 0 e 1 e acima do mínimo (0,6). Ollama
 fora do ar, timeout ou erro HTTP → resultado `INDISPONIVEL`/`TIMEOUT` e uso da regra atual; após 3
 falhas seguidas, um disjuntor para de chamar o modelo. A IA **nunca confirma**: só sugere para o revisor.

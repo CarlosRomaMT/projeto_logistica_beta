@@ -74,6 +74,8 @@ def avaliar(gabarito: list[dict], opms: list[dict], cliente: "ia.ClienteOllama |
             exemplos = banco.buscar(descricao, n_exemplos, excluir_chave=item["cod_upm"]) if banco else []
             linha["exemplos_usados"] = " ".join(e.chave for e in exemplos)
             r = cliente.sugerir(descricao, candidatas, exemplos)
+            linha["ia_alerta"] = bool(r.resultado == ia.ACEITA and r.id_opm is not None and
+                                      seletor.alerta_de_coerencia(descricao, r.id_opm, candidatas))
             linha.update({"ia_resultado": r.resultado, "ia_motivo": r.motivo, "ia_id": r.id_opm,
                           "ia_confianca": r.confianca, "ia_justificativa": r.justificativa,
                           "ia_latencia_ms": r.latencia_ms})
@@ -126,6 +128,9 @@ def gerar_markdown(m: dict, meta: dict) -> str:
               f"- OPM correta entre as candidatas enviadas: **{_pct(q['gabarito_nas_candidatas'])}** "
               "(teto da IA: se a certa não foi enviada, não há como acertar)",
               f"- Acurácia do Qwen quando a OPM correta foi enviada: **{_pct(q['acuracia_quando_gabarito_enviado'])}**",
+              *([f"- Alerta de coerência (determinístico): em {q['alertas_em_erros'] + q['alertas_em_acertos']} "
+                 f"sugestões aceitas, {q['alertas_em_erros']} erradas e {q['alertas_em_acertos']} certas"]
+                if "alertas_em_erros" in q else []),
               "", "## Onde a IA agrega\n",
               f"- Casos que a regra atual não acertava: {g['casos_que_a_regra_nao_acertava']}",
               f"- Resolvidos pelo híbrido: **{g['resolvidos_pelo_hibrido']}**",
