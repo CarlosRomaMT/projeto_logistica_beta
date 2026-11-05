@@ -111,8 +111,11 @@ confirmadas aparece "sugestão da IA aceita"). Cada chamada fica em `tb_execucao
 o Ollama e clique de novo: a tela avisa "IA indisponível" e as sugestões por semelhança continuam.
 Requer Ollama na máquina (`ollama pull qwen2.5:7b`); a API no Docker o acessa por
 `host.docker.internal:11434` (`OLLAMA_URL`, `OLLAMA_MODELO`, `IA_HABILITADA` no `docker-compose.yml`).
-Com os dados fictícios, o Qwen confirma a 103 (concorda com a semelhança) mas responde "nenhuma" para a
-sigla BPTRAN: é o comportamento conservador medido na avaliação (ver *Limitações*).
+Com os dados fictícios e o prompt v2 (padrão), a IA resolve a sigla **BPTRAN** → *Batalhão de Polícia
+Militar de Trânsito* (confiança 1,0, "BPTRAN é a abreviatura de...") e responde "nenhuma" para a 103
+("3º BTL PM"), que continua com a sugestão por semelhança (3º BPM - Sul): é o plano B funcionando. A
+versão v5 do prompt acertava os dois, mas foi descartada por ser pior nos dados reais
+(`evidencias/ajuste_prompt_20261105.md`).
 
 Toda associação confirmada tem o botão **Alterar** (inclusive as automáticas). Alterar move para a nova
 OPM as viaturas lotadas pela associação anterior que nunca foram movimentadas depois. Sem escolher a
@@ -268,8 +271,11 @@ gabarito a UPM cujas viaturas estão **todas** na mesma OPM vigente (`--pureza-m
 gabarito vem dos **códigos** e os métodos só veem os **nomes**, a comparação é justa.
 
 **IA (`logistica-api/app/services/ia_de_para.py`):** Qwen via Ollama local recebe a descrição antiga e
-as 20 OPMs vigentes mais parecidas (seleção determinística por termos raros, ex.: nome da cidade), com
-saída obrigatória em JSON Schema, temperatura 0 e seed fixa. A resposta é validada: JSON no contrato, id
+as 5 OPMs vigentes mais parecidas (seleção determinística por termos raros, ex.: nome da cidade), com
+saída obrigatória em JSON Schema, temperatura 0 e seed fixa. O prompt é versionado (`IA_VERSAO_PROMPT`,
+padrão `v2`; `--prompt` no comparativo) e a escolha da versão e do número de candidatas foi feita na
+partição dev do gabarito e medida na partição teste (`evidencias/ajuste_prompt_20261105.md`: híbrido de
+43,9% para 63,7% de acurácia e de 63,9% para 74,1% de precisão). A resposta é validada: JSON no contrato, id
 dentro das candidatas enviadas (barra alucinação), confiança entre 0 e 1 e acima do mínimo (0,6). Ollama
 fora do ar, timeout ou erro HTTP → resultado `INDISPONIVEL`/`TIMEOUT` e uso da regra atual; após 3
 falhas seguidas, um disjuntor para de chamar o modelo. A IA **nunca confirma**: só sugere para o revisor.

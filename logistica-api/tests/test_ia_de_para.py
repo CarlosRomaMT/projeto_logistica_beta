@@ -128,6 +128,40 @@ def test_resposta_valida_rearma_o_disjuntor():
     assert cliente._falhas_seguidas == 0
 
 
+# Versões do prompt (rastreáveis)
+
+
+@pytest.mark.parametrize("versao", sorted(ia.PROMPTS))
+def test_cada_versao_envia_seu_prompt_e_seu_esquema(versao):
+    chamadas = []
+
+    def tratar(request):
+        chamadas.append(json.loads(request.content))
+        return httpx.Response(200, json={"message": {"content": json.dumps(
+            {"analise": "núcleo, localidade Vila Fictícia", "id_opm": 10, "confianca": 0.9,
+             "justificativa": "mesma localidade"})}})
+
+    cliente = ClienteOllama(transport=httpx.MockTransport(tratar), versao_prompt=versao)
+    r = cliente.sugerir("NPM Vila Fictícia", CANDIDATAS)
+
+    prompt, esquema = ia.PROMPTS[versao]
+    assert chamadas[0]["messages"][0]["content"] == prompt
+    assert chamadas[0]["format"] == esquema
+    assert (r.resultado, r.id_opm) == (ia.ACEITA, 10)  # campo "analise" extra não atrapalha a validação
+    assert cliente.identificacao == f"{cliente.modelo} (prompt {versao})"
+
+
+def test_versao_de_prompt_desconhecida_e_recusada():
+    with pytest.raises(ValueError, match="Versão de prompt desconhecida"):
+        ClienteOllama(versao_prompt="v99")
+
+
+def test_exemplos_do_prompt_sao_ficticios_e_nao_citam_o_caso_da_demo():
+    # O caso BPTRAN da demonstração não pode estar "colado" no prompt.
+    for prompt, _ in ia.PROMPTS.values():
+        assert "BPTRAN" not in prompt
+
+
 # Seleção de candidatas (determinística)
 
 

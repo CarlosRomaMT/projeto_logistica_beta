@@ -107,13 +107,14 @@ def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
         ).mappings()]
         seletor = ia.SeletorCandidatas(opms_candidatas(conn))
 
+    identificacao = getattr(cliente, "identificacao", cliente.modelo)
     cont: Counter = Counter()
     for alvo in alvos:
         r = cliente.sugerir(alvo["ds_unidade_legado"], seletor.selecionar(alvo["ds_unidade_legado"]))
         cont[r.resultado] += 1
         with engine.begin() as conn:
-            registrar_execucao(conn, alvo["cd_unidade_legado"], cliente.modelo, r, usuario)
-            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, cliente.modelo):
+            registrar_execucao(conn, alvo["cd_unidade_legado"], identificacao, r, usuario)
+            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, identificacao):
                 cont["ja_decididas"] += 1  # o revisor confirmou enquanto a IA pensava: decisão humana vale
 
     logger.info("IA no de-para por %s: %s", usuario, dict(cont))

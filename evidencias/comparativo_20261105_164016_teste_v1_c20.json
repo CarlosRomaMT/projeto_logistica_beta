@@ -1,0 +1,73 @@
+{
+  "meta": {
+    "gerado_em": "05/11/2026 16:40",
+    "total": 157,
+    "modelo": "qwen2.5:7b",
+    "candidatas": 20,
+    "opms_vigentes": 458,
+    "confianca_minima": 0.6,
+    "pureza_minima": "1.0",
+    "amostra": null,
+    "semente": 42,
+    "prompt": "v1",
+    "particao": "teste"
+  },
+  "metricas": {
+    "regra_atual": {
+      "total": 157,
+      "acertos": 31,
+      "erros": 32,
+      "sem_sugestao": 94,
+      "acuracia": 0.197,
+      "precisao": 0.492,
+      "cobertura": 0.401,
+      "confirmacoes_automaticas": 5,
+      "confirmacoes_automaticas_erradas": 1,
+      "por_situacao": {
+        "PENDENTE": 58,
+        "SEM_CORRESPONDENCIA": 94,
+        "CONFIRMADO": 5
+      }
+    },
+    "qwen": {
+      "total": 157,
+      "acertos": 62,
+      "erros": 33,
+      "sem_sugestao": 62,
+      "acuracia": 0.395,
+      "precisao": 0.653,
+      "cobertura": 0.605,
+      "por_resultado": {
+        "ACEITA": 95,
+        "SEM_CORRESPONDENCIA": 61,
+        "BAIXA_CONFIANCA": 1
+      },
+      "motivos_descarte": {},
+      "latencia_ms_media": 2429,
+      "latencia_ms_mediana": 2324,
+      "latencia_ms_p95": 3284,
+      "gabarito_nas_candidatas": 0.866,
+      "acuracia_quando_gabarito_enviado": 0.456
+    },
+    "hibrido": {
+      "total": 157,
+      "acertos": 69,
+      "erros": 39,
+      "sem_sugestao": 49,
+      "acuracia": 0.439,
+      "precisao": 0.639,
+      "cobertura": 0.688,
+      "origem": {
+        "qwen": 92,
+        "sem_sugestao": 49,
+        "regra_similaridade": 11,
+        "regra_exata": 5
+      }
+    },
+    "ganho_do_hibrido": {
+      "casos_que_a_regra_nao_acertava": 126,
+      "resolvidos_pelo_hibrido": 38,
+      "acertos_da_regra_perdidos_no_hibrido": 0
+    }
+  }
+}

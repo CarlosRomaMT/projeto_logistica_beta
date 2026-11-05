@@ -107,15 +107,34 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
    - 14 testes novos (`tests/test_de_para_ia.py`); suíte da logística: 103 passando.
    - Teste real com Qwen nos dados fictícios: 103 → 3º BPM Sul (confiança 1,0, concorda com a
      semelhança); BPTRAN → "nenhuma" (0,1), embora o Batalhão de Trânsito estivesse entre as candidatas.
+7. **Ajuste do prompt** (mesmo dia; detalhes em `evidencias/ajuste_prompt_20261105.md`):
+   - Diagnóstico da v1: com a OPM certa entre as candidatas, 77 recusas ("nenhuma corresponde exatamente")
+     e confusão com a unidade superior citada após o hífen.
+   - Prompts versionados em `ia_de_para.PROMPTS` (v1 a v5), `IA_VERSAO_PROMPT`, identificação
+     "modelo (prompt vN)" gravada em cada sugestão; comparativo com `--prompt`, `--candidatas` e
+     `--particao dev|teste` (dev = `cod_upm % 10 < 3`, 71 UPMs; teste = 157 UPMs, usada só no fim).
+   - Escolhida **v2 com 5 candidatas** (melhor na dev). Descartadas: v3 (campo de análise: mais lenta, sem
+     ganho), v4 (regra de tipo detalhada: o 7B não seguiu), v5 (acerta os 3 casos da demo, mas é pior nos
+     dados reais).
+   - Partição teste, híbrido: v1/20 → 69 acertos, 39 erros (43,9%, precisão 63,9%); **v2/5 → 100 acertos,
+     35 erros (63,7%, precisão 74,1%)**, 2,0 s por unidade.
+   - Exemplos do prompt só fictícios; teste garante que "BPTRAN" não aparece em nenhum prompt.
+   - Suíte: logística 110 testes, avaliação 16.
 
 ## Próximos passos
 
-1. Ajustar o prompt (o modelo é conservador demais: BPTRAN, "NPM X - 7º BPM" → "NUCLEO PM - X") e
-   testar com `--limite 30`; testar modelo maior ou `qwen3` (`--modelo`).
-2. Revisar à mão uma amostra dos 50 erros do híbrido (separar erro do método × ruído do gabarito).
+1. **RAG de exemplos** (few-shot dinâmico): colocar no prompt os 3–5 pares já conhecidos mais parecidos
+   (histórico dos veículos com pureza 100% e confirmações humanas). Na avaliação, exemplos só da
+   partição dev e medição só na teste; a própria unidade nunca entra como exemplo. Opcional: trocar o
+   seletor por embeddings locais (`nomic-embed-text`/`bge-m3`) — hoje a OPM certa está entre as 5
+   candidatas em ~81% dos casos.
+2. Testar `qwen3:8b` (cabe nos 6 GB da RTX 3060) com `--modelo`, na mesma partição teste.
 3. Usar o histórico dos veículos como primeira camada do de-para real (antes do nome e da IA).
-4. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
-5. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
+4. Revisar à mão uma amostra dos erros do híbrido (separar erro do método × ruído do gabarito).
+5. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
+6. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
+   Fine-tuning e MCP foram avaliados e descartados por ora (poucos pares e ruidosos; MCP não melhora a
+   qualidade da sugestão).
 
 Testes da logística localmente: se a porta 5433 estiver ocupada, suba um Postgres de teste em outra porta
 e aponte `TEST_DATABASE_URL` para ele (`DB_SQL_DIR=../db`).
