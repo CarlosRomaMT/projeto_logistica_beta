@@ -23,8 +23,8 @@ def ler_csv(caminho):
 def test_dry_run_nao_altera_o_banco(consultar, tmp_path):
     resultado = executar_migracao(dry_run=True, saida=tmp_path)
 
-    assert resultado.atualizadas == 16
-    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 16
+    assert resultado.atualizadas == 20
+    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 20
     assert consultar("SELECT count(*) AS n FROM tb_de_para_unidade")[0]["n"] == 0
     assert list(tmp_path.iterdir()) == []
 
@@ -33,16 +33,17 @@ def test_carga_deixa_todas_as_ativas_com_opm(consultar, viatura, tmp_path):
     resultado = executar_migracao(saida=tmp_path)
 
     assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 0
-    assert viatura("ABC1A23")["fk_id_opm_unidade"] == 1   # '1º BPM - CENTRO'
-    assert viatura("ABC2B34")["fk_id_opm_unidade"] == 1   # 'PRIMEIRO BATALHAO PM CENTRO'
-    assert viatura("BCD1D11")["fk_id_opm_unidade"] == 2   # '2 B.P.M. NORTE'
-    assert viatura("DEF1H11")["fk_id_opm_unidade"] == 4   # '1ª CIA IND PM'
+    assert viatura("ABC1A23")["fk_id_opm_unidade"] == 1   # '1º BPM - SANTA AURORA'
+    assert viatura("ABC2B34")["fk_id_opm_unidade"] == 1   # 'PRIMEIRO BATALHAO PM SANTA AURORA'
+    assert viatura("BCD1D11")["fk_id_opm_unidade"] == 2   # '2 B.P.M. NOVA PRIMAVERA'
+    assert viatura("DEF1H11")["fk_id_opm_unidade"] == 4   # '1ª CIA IND PM SERRA DOURADA'
+    assert viatura("KLM1A11")["fk_id_opm_unidade"] == 0   # 'NPM ... - 2º BPM': sem correspondência por nome
     assert viatura("CDE1F11")["fk_id_opm_unidade"] == 0   # só parecida: aguarda validação
     assert viatura("HIJ1Q11")["fk_id_opm_unidade"] is None  # baixada fica de fora
     assert viatura("JKL1S11")["fk_id_opm_unidade"] == 1     # já preenchida: não sobrescreve
     assert viatura("ABC1A23")["cd_unidade_legado"] == "101"
     assert viatura("BCD2E22")["fk_id_opm_unidade"] == 2     # cautelada: na implantação também é lotada
-    assert resultado.contingencia == 9
+    assert resultado.contingencia == 13
 
 
 def test_relatorio_lista_inconformidades_por_motivo(tmp_path):
@@ -57,12 +58,12 @@ def test_relatorio_lista_inconformidades_por_motivo(tmp_path):
         "OPM_INATIVA": ["EFG1J11"],
         "LEGADO_NULO": ["FGH1K11", "FGH2L22", "FGH3M33"],
         "UNIDADE_LEGADO_INEXISTENTE": ["GHI1N11", "GHI3P33"],
-        "SEM_CORRESPONDENCIA": ["GHI2O22"],
+        "SEM_CORRESPONDENCIA": ["GHI2O22", "KLM1A11", "KLM2B22", "KLM3C33", "KLM4D44"],
         "DIVERGENCIA_LEGADO_X_NOVO": ["JKL1S11"],
     }
     pendente = next(l for l in linhas if l["placa"] == "CDE1F11")
-    assert pendente["opm_sugerida"] == "3º Batalhão de Polícia Militar - Sul"
-    assert pendente["ds_unidade_legado"] == "3º BTL PM"
+    assert pendente["opm_sugerida"] == "2ª CIA PM - 1º BPM"
+    assert pendente["ds_unidade_legado"] == "2ª CIA PM SANTA AURORA - 1º BPM"
 
 
 def test_segunda_execucao_nao_altera_nada(tmp_path):
@@ -104,7 +105,7 @@ def test_falha_no_meio_da_carga_desfaz_tudo(consultar, monkeypatch, tmp_path):
     with pytest.raises(RuntimeError):
         executar_migracao(saida=tmp_path)
 
-    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 16
+    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 20
     assert consultar("SELECT count(*) AS n FROM tb_de_para_unidade")[0]["n"] == 0
     assert list(tmp_path.iterdir()) == []
 
@@ -146,7 +147,7 @@ def relatorios(monkeypatch, tmp_path):
 
 
 def test_situacao_mostra_viaturas_aguardando_a_carga(client, relatorios):
-    assert client.get("/api/carga").json() == {"aguardando_carga": 16}
+    assert client.get("/api/carga").json() == {"aguardando_carga": 20}
     client.post("/api/carga/executar", json={"usuario": "sgt.revisor"})
     assert client.get("/api/carga").json() == {"aguardando_carga": 0}
 
@@ -154,31 +155,32 @@ def test_situacao_mostra_viaturas_aguardando_a_carga(client, relatorios):
 def test_simular_pela_tela_nao_grava_nada(client, consultar, relatorios):
     corpo = client.post("/api/carga/simular").json()
 
-    assert (corpo["simulacao"], corpo["atualizadas"], corpo["contingencia"], corpo["relatorio"]) == (True, 16, 9, None)
+    assert (corpo["simulacao"], corpo["atualizadas"], corpo["contingencia"], corpo["relatorio"]) == (True, 20, 13, None)
     assert [(l["placa"], l["nome_opm"]) for l in corpo["lotadas"]][:2] == [
-        ("ABC1A23", "1º Batalhão de Polícia Militar - Centro"), ("ABC2B34", "1º Batalhão de Polícia Militar - Centro"),
+        ("ABC1A23", "1º BATALHAO DE POLICIA MILITAR - SANTA AURORA"),
+        ("ABC2B34", "1º BATALHAO DE POLICIA MILITAR - SANTA AURORA"),
     ]
-    assert len(corpo["lotadas"]) == 7  # 16 alteradas = 7 lotadas na OPM certa + 9 para a OPM 0
-    assert len(corpo["inconformidades"]) == 10
-    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 16
+    assert len(corpo["lotadas"]) == 7  # 20 alteradas = 7 lotadas na OPM certa + 13 para a OPM 0
+    assert len(corpo["inconformidades"]) == 14
+    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 20
     assert list(relatorios.iterdir()) == []
 
 
 def test_executar_pela_tela_grava_e_registra_quem_executou(client, consultar, relatorios):
     corpo = client.post("/api/carga/executar", json={"usuario": "sgt.revisor"}).json()
 
-    assert (corpo["simulacao"], corpo["atualizadas"], corpo["propostas_criadas"]) == (False, 16, 1)
+    assert (corpo["simulacao"], corpo["atualizadas"], corpo["propostas_criadas"]) == (False, 20, 1)
     assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 0
     resp = client.get(f"/api/carga/relatorios/{corpo['relatorio']}")
     assert resp.status_code == 200
     linhas = list(csv.DictReader(resp.content.decode("utf-8-sig").splitlines(), delimiter=";"))
-    assert len(linhas) == 10
+    assert len(linhas) == 14
     assert {l["executado_por"] for l in linhas} == {"sgt.revisor"}
 
 
 def test_executar_pela_tela_exige_revisor(client, consultar, relatorios):
     assert client.post("/api/carga/executar", json={}).status_code == 422
-    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 16
+    assert consultar(SQL_ATIVAS_SEM_OPM)[0]["n"] == 20
 
 
 @pytest.mark.parametrize("nome", ["inconformidades_20260101_000000.csv", "02_seed.sql"])
@@ -195,8 +197,8 @@ def test_sem_opm_lista_o_que_a_carga_nao_resolveu_com_motivo(client, relatorios)
 
     linhas = {v["placa"]: v for v in client.get("/api/carga/sem-opm").json()}
 
-    assert sorted(linhas) == ["CDE1F11", "CDE2G22", "EFG1J11", "FGH1K11", "FGH2L22",
-                              "FGH3M33", "GHI1N11", "GHI2O22", "GHI3P33"]
+    assert sorted(linhas) == ["CDE1F11", "CDE2G22", "EFG1J11", "FGH1K11", "FGH2L22", "FGH3M33",
+                              "GHI1N11", "GHI2O22", "GHI3P33", "KLM1A11", "KLM2B22", "KLM3C33", "KLM4D44"]
     assert (linhas["CDE1F11"]["motivo"], linhas["CDE1F11"]["id_opm_sugerida"]) == ("DE_PARA_PENDENTE_VALIDACAO", 3)
     assert (linhas["EFG1J11"]["motivo"], linhas["EFG1J11"]["id_opm_sugerida"]) == ("OPM_INATIVA", None)
     assert linhas["GHI3P33"]["motivo"] == "UNIDADE_LEGADO_INEXISTENTE"

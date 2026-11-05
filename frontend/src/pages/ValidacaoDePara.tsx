@@ -187,7 +187,7 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
         pendente={aguardandoDecisao > 0}
       />
       <p className="nota">
-        O cadastro antigo identifica a unidade só pelo nome, escrito de várias formas (ex.: "3º BTL PM"). O sistema
+        O cadastro antigo identifica a unidade só pelo nome, escrito de várias formas (ex.: "NPM RIO CLARO DO NORTE - 2º BPM"). O sistema
         sugere a OPM com o nome mais parecido e, em <strong>Sugerir com IA</strong>, um modelo de IA local (Qwen) analisa
         as unidades sem associação e explica a sugestão. Nenhuma sugestão é aplicada sozinha: confirme ou escolha outra. O que você confirma aqui é aplicado
         na hora às viaturas da unidade, com registro no histórico. As associações automáticas (nome idêntico) são

@@ -22,13 +22,32 @@ docker compose up -d --build
 | API Cautela (Swagger) | http://localhost:8002/docs |
 | PostgreSQL | `localhost:5433` (usuário/senha/banco: `frota`) |
 
-O banco começa no estado **"antes da correção"**: 16 viaturas ativas só com a coluna antiga.
+O banco começa no estado **"antes da correção"**: 20 viaturas ativas só com a coluna antiga.
+
+**Dados fictícios, padrões reais.** Cidades e unidades são inventadas, mas os casos reproduzem o que o
+diagnóstico encontrou no banco de desenvolvimento (`evidencias/diagnostico_real_*.md`): OPMs em
+maiúsculas e sem acento com abreviatura própria (como `sgpm.opm`), unidade antiga citando a superior
+depois do hífen, núcleo que virou pelotão, sede de comando regional, sigla, unidade elevada a regimento,
+OPM extinta, legado vazio ou inexistente e a divergência entre a coluna antiga e a nova:
+
+| Unidade antiga | OPM correta | Como a regra atual classifica |
+|---|---|---|
+| 101 `1º BPM - SANTA AURORA` e 111 `PRIMEIRO BATALHAO PM SANTA AURORA` | 1º BATALHAO ... - SANTA AURORA | nome igual (automático) |
+| 102 `2 B.P.M. NOVA PRIMAVERA` / 104 `1ª CIA IND PM SERRA DOURADA` | OPM 2 / OPM 4 | nome igual (automático) |
+| 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM | semelhança 89% (sugestão) |
+| 105 `5º BPM - BOA VISTA DO SUL` | OPM 5, **extinta** | nome igual, mas OPM inativa |
+| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO | sem sugestão (sigla) |
+| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | NUCLEO PM - RIO CLARO DO NORTE | sem sugestão (número é da superior) |
+| 108 `NPM LAGO AZUL` | 1º PELOTAO PM - LAGO AZUL | sem sugestão (núcleo virou pelotão) |
+| 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL | sem sugestão |
+| 110 `1º ESQ IND POLICIAMENTO MONTADO` | REGIMENTO DE POLICIAMENTO MONTADO | sem sugestão (unidade elevada) |
 
 ## Como a unidade antiga vira OPM
 
 `tb_viatura.cd_unidade_legado` aponta para o cadastro antigo de unidades (`tb_unidade_legado`), que
 **não tem chave comum** com `tb_opm`. A única ponte é a **descrição**, que tem abreviações e grafias
-diferentes ("1º BPM - CENTRO", "PRIMEIRO BATALHAO PM CENTRO", "1º Batalhão de Polícia Militar - Centro").
+diferentes ("1º BPM - SANTA AURORA", "PRIMEIRO BATALHAO PM SANTA AURORA", "1º BATALHAO DE POLICIA MILITAR -
+SANTA AURORA").
 
 1. **Normalização** (`app/services/de_para.py`): minúsculas, sem acentos e pontuação, abreviações
    expandidas (BPM, BTL, CIA, IND, PM…), ordinais por extenso em número ("primeiro" → 1), sem "de/da/do".
@@ -78,13 +97,13 @@ lotação → correção das divergências → lotar as viaturas que ficaram na 
 `logistica-api` cria as sugestões ao subir.
 
 ### 1. Mostrar o problema
-Abra http://localhost:5173. Na Logística, 18 viaturas (16 ativas e 2 baixadas) aparecem como
+Abra http://localhost:5173. Na Logística, 22 viaturas (20 ativas e 2 baixadas) aparecem como
 *"Sem unidade: invisível no Cautela"*. No Cautela, o `p4.opm2` não vê nenhuma viatura.
 
 Marque **"Demonstração: mostrar unidade do cadastro antigo"** para ver, ao lado de cada viatura, a
 unidade antiga (código e descrição). A coluna *Associação com OPM* (o de-para) já mostra 5 unidades
-**confirmadas** (nome igual após normalizar), a 103 como **sugestão a confirmar** (3º BPM - Sul,
-semelhança 93%) e a 106 **sem sugestão** (BPTRAN): as sugestões foram criadas na subida da API. Essas colunas vêm
+**confirmadas** (nome igual após normalizar), a 103 como **sugestão a confirmar** (2ª CIA PM - 1º BPM,
+semelhança 89%) e a 106 a 110 **sem sugestão**: as sugestões foram criadas na subida da API. Essas colunas vêm
 de um endpoint de diagnóstico separado (`/api/diagnostico/legado`); a listagem oficial continua sem
 o legado (RNF02).
 
@@ -92,11 +111,12 @@ o legado (RNF02).
 Abra a aba **Implantação**. Enquanto o **Revisor** no topo estiver vazio, um aviso pede o
 preenchimento; clicar numa ação sem ele leva até o campo (sem login no MVP, o nome fica registrado em
 cada decisão). Na tela, o termo técnico "de-para" não aparece: o painel *Associar as unidades antigas às
-OPMs* mostra "3 unidade(s) aguardando decisão":
-- 103 (3º BTL PM) já vem com a sugestão *3º Batalhão de Polícia Militar - Sul*: clique em **Confirmar**.
+OPMs* mostra "7 unidade(s) aguardando decisão":
+- 103 já vem com a sugestão *2ª CIA PM - 1º BPM* (semelhança): clique em **Confirmar**.
   Esperado: "Viaturas lotadas nela: CDE1F11, CDE2G22".
-- 106 (BPTRAN) não tem sugestão: busque "Trânsito", escolha o *Batalhão de Polícia Militar de Trânsito*
-  e confirme. A GHI2O22 é lotada nele.
+- 106 a 110 não têm sugestão por semelhança: use **Sugerir com IA** (abaixo) ou busque a OPM
+  (a busca ignora acentos e aceita a abreviatura: "Trânsito", "Lago Azul", "RPMON") e confirme. Cada
+  confirmação lota a viatura da unidade (GHI2O22, KLM1A11, KLM2B22, KLM3C33, KLM4D44).
 - 105 (5º BPM EXTINTO) foi associada automaticamente a uma OPM **inativa** e por isso aparece como
   pendente ("OPM inativa: escolha outra"). Se ninguém souber qual OPM sucedeu a unidade, deixe-a: a
   viatura dela (EFG1J11) vai para a OPM 0 e é lotada na etapa 4.
@@ -111,11 +131,20 @@ confirmadas aparece "sugestão da IA aceita"). Cada chamada fica em `tb_execucao
 o Ollama e clique de novo: a tela avisa "IA indisponível" e as sugestões por semelhança continuam.
 Requer Ollama na máquina (`ollama pull qwen2.5:7b`); a API no Docker o acessa por
 `host.docker.internal:11434` (`OLLAMA_URL`, `OLLAMA_MODELO`, `IA_HABILITADA` no `docker-compose.yml`).
-Com os dados fictícios e o prompt v2 (padrão), a IA resolve a sigla **BPTRAN** → *Batalhão de Polícia
-Militar de Trânsito* (confiança 1,0, "BPTRAN é a abreviatura de...") e responde "nenhuma" para a 103
-("3º BTL PM"), que continua com a sugestão por semelhança (3º BPM - Sul): é o plano B funcionando. A
-versão v5 do prompt acertava os dois, mas foi descartada por ser pior nos dados reais
-(`evidencias/ajuste_prompt_20261105.md`).
+Resultado observado com `qwen2.5:7b` e o prompt v2 (padrão) nos dados fictícios, que mostra na demo
+tanto o ganho quanto o motivo da validação humana:
+
+| Unidade | Sugestão da IA | |
+|---|---|---|
+| 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM (concorda com a semelhança) | ✓ |
+| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO | ✓ |
+| 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL (confiança 1,0) | ✓ |
+| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | 3ª CIA PM - 2º BPM: **errada** (confundiu com a superior) | ✗ o revisor troca para NUCLEO PM - RIO CLARO DO NORTE |
+| 108 `NPM LAGO AZUL` / 110 `1º ESQ IND ...` | "nenhuma corresponde" | o revisor busca e escolhe |
+
+São os mesmos padrões de erro medidos no banco real (`evidencias/ajuste_prompt_20261105.md`). O
+resultado pode variar com outra versão do modelo; o modelo e a versão do prompt ficam gravados em cada
+sugestão.
 
 Toda associação confirmada tem o botão **Alterar** (inclusive as automáticas). Alterar move para a nova
 OPM as viaturas lotadas pela associação anterior que nunca foram movimentadas depois. Sem escolher a
@@ -123,7 +152,7 @@ OPM, Confirmar avisa "Escolha a OPM correta da unidade … antes de confirmar".
 
 Cada viatura lotada passa pelo serviço de movimentação (validação do RF03, histórico com tipo
 `CORRECAO_DE_PARA`). Na implantação, viatura cautelada também é lotada. OPM inativa é recusada com a
-mensagem oficial. A etapa 2 cai de 16 para 13 viaturas aguardando.
+mensagem oficial. Confirmando 103 e 106 a 110, a etapa 2 cai de 20 para 13 viaturas aguardando.
 
 **Alternativa por CSV** (revisão em massa no Excel, passos 2a e 2b):
 
@@ -137,7 +166,7 @@ as linhas pendentes vêm primeiro. Na última coluna, `id_opm_confirmada`, preen
 
 | cd_unidade_legado | Descrição antiga | id_opm_confirmada |
 |---|---|---|
-| 103 | 3º BTL PM | `3` |
+| 103 | 2ª CIA PM SANTA AURORA - 1º BPM | `3` |
 | 106 | BPTRAN | `6` |
 
 Linhas em branco não são alteradas. Salve como CSV; a importação aceita o arquivo salvo pelo Excel
@@ -173,7 +202,7 @@ com o motivo), e o link
 - a `JKL1S11`, cujo legado diverge da coluna nova, não é alterada: vira **1 proposta de correção**
   (etapa 3).
 
-Se a carga rodar antes da etapa 1, 10 viaturas vão para a OPM 0; confirmar o de-para depois as tira de
+Se a carga rodar antes da etapa 1, 13 viaturas vão para a OPM 0; confirmar o de-para depois as tira de
 lá na hora, sem rodar a carga de novo. O resultado da carga é um retrato daquele momento ("gravada às
 HH:MM"); o que falta resolver aparece nas etapas 3 e 4, que se atualizam sozinhas.
 
@@ -183,7 +212,7 @@ e grava a coluna nova direto, registrando quem executou só no relatório.
 
 ### 4. Etapa 3: corrigir as divergências
 Em *Corrigir divergências* ("1 proposta(s) em aberto") aparece a `JKL1S11`: OPM atual
-*1º BPM - Centro*, proposta *2º BPM - Norte* (pelo cadastro antigo). Marque e clique em
+*1º BATALHAO ... - SANTA AURORA*, proposta *2º BATALHAO ... - NOVA PRIMAVERA* (pelo cadastro antigo). Marque e clique em
 **Aplicar selecionadas** (ou **Rejeitar**). Esperado: "Corrigidas: JKL1S11"; ela passa a aparecer para
 o `p4.opm2`.
 - Só entram viaturas **nunca movimentadas pelo sistema novo**: depois da implantação o legado fica
@@ -200,12 +229,12 @@ viatura que está na OPM 0, para não contornar o RF03 da operação. Resolver a
 de uma vez, todas as viaturas dela.
 
 ### 6. Movimentar pela tela nova
-Escolha uma viatura disponível e busque "Norte" no campo de OPM. Ao gravar, ela aparece na hora
+Escolha uma viatura disponível e busque "Primavera" no campo de OPM (2º BPM - Nova Primavera). Ao gravar, ela aparece na hora
 para o `p4.opm2` e some da OPM de origem.
 
 ### 7. Bloqueio do RF03
 Marque *"Demonstração: listar também OPMs inativas"*, escolha o
-*5º Batalhão de Polícia Militar (extinto)* e tente movimentar. Ou deixe a OPM em branco. A mensagem
+*5º BATALHAO DE POLICIA MILITAR - BOA VISTA DO SUL* (extinto) e tente movimentar. Ou deixe a OPM em branco. A mensagem
 oficial aparece e nada é gravado.
 
 ### 8. Rollback e testes automatizados

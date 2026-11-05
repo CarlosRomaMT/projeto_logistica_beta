@@ -120,6 +120,15 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
      35 erros (63,7%, precisão 74,1%)**, 2,0 s por unidade.
    - Exemplos do prompt só fictícios; teste garante que "BPTRAN" não aparece em nenhum prompt.
    - Suíte: logística 110 testes, avaliação 16.
+8. **Dados fictícios com padrões reais** (pedido do usuário: "3º BTL PM → 3º BPM Sul" não existia no
+   banco real). `db/02_seed.sql` refeito com cidades inventadas (Santa Aurora, Nova Primavera, Serra
+   Dourada, Rio Claro do Norte, Lago Azul, Boa Vista do Sul — diferentes das do prompt) mantendo códigos,
+   placas e papéis de cada unidade; OPMs em maiúsculas, sem acento e com `abreviatura` (como
+   `sgpm.opm`). Novas unidades 107–110 com os padrões difíceis do banco real: NPM citando a superior,
+   núcleo que virou pelotão, "CR 12 - SEDE", unidade elevada a regimento (viaturas KLM1A11–KLM4D44).
+   Busca de OPM ignora acento e usa a abreviatura. Agora são 20 viaturas ativas sem a coluna nova.
+   Qwen v2 nos fictícios: acerta 103, 106 (BPTRAN) e 109; erra 107 (escolhe a 3ª CIA do 2º BPM, como no
+   banco real) e responde "nenhuma" para 108 e 110. Suíte: logística 113, cautela 6.
 
 ## Próximos passos
 

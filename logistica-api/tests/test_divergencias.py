@@ -28,8 +28,8 @@ def test_lista_proposta_com_opm_atual_e_proposta(client):
     jkl = propostas(client)["JKL1S11"]
 
     assert (jkl["nome_opm_atual"], jkl["nome_opm_proposta"]) == (
-        "1º Batalhão de Polícia Militar - Centro", "2º Batalhão de Polícia Militar - Norte")
-    assert (jkl["cd_unidade_legado"], jkl["ds_unidade_legado"]) == ("102", "2 B.P.M. NORTE")
+        "1º BATALHAO DE POLICIA MILITAR - SANTA AURORA", "2º BATALHAO DE POLICIA MILITAR - NOVA PRIMAVERA")
+    assert (jkl["cd_unidade_legado"], jkl["ds_unidade_legado"]) == ("102", "2 B.P.M. NOVA PRIMAVERA")
     assert jkl["bloqueio"] is None
 
 

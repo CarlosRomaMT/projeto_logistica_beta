@@ -28,10 +28,11 @@ FALHAS = (ia.INDISPONIVEL, ia.TIMEOUT)
 
 def opms_candidatas(conn: Connection) -> list[ia.Candidata]:
     linhas = conn.execute(
-        text("SELECT id_opm, nome FROM tb_opm WHERE status = :ativa AND id_opm <> :contingencia ORDER BY id_opm"),
+        text("SELECT id_opm, nome, abreviatura FROM tb_opm"
+             " WHERE status = :ativa AND id_opm <> :contingencia ORDER BY id_opm"),
         {"ativa": STATUS_OPM_ATIVA, "contingencia": ID_OPM_CONTINGENCIA},
     ).mappings()
-    return [ia.Candidata(linha["id_opm"], linha["nome"]) for linha in linhas]
+    return [ia.Candidata(linha["id_opm"], linha["nome"], linha["abreviatura"]) for linha in linhas]
 
 
 def registrar_execucao(conn: Connection, cd_unidade: str, modelo: str, r: ia.RespostaIA, usuario: str) -> None:

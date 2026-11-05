@@ -66,14 +66,14 @@ def test_sincronizacao_nao_sobrescreve_decisao_humana(consultar):
         """)
         criadas = sincronizar_de_para(conn)
 
-    assert criadas == 6
+    assert criadas == 10  # 11 unidades antigas, uma já decidida
     manual = consultar("SELECT * FROM tb_de_para_unidade WHERE cd_unidade_legado = '106'")[0]
     assert (manual["fk_id_opm"], manual["metodo"]) == (6, "MANUAL")
 
 
 def test_sincronizacao_repetida_nao_cria_nada():
     with engine.begin() as conn:
-        assert sincronizar_de_para(conn) == 7
+        assert sincronizar_de_para(conn) == 11
         assert sincronizar_de_para(conn) == 0
 
 
@@ -89,7 +89,7 @@ def test_subida_da_api_deixa_o_de_para_pronto_para_revisao(consultar):
     with TestClient(app) as client:  # o `with` dispara o lifespan
         de_para = client.get("/api/de-para").json()
 
-    assert len(de_para) == 7
+    assert len(de_para) == 11
     assert {d["cd_unidade_legado"]: d["situacao"] for d in de_para}["103"] == "PENDENTE"
     manual = consultar("SELECT fk_id_opm, metodo FROM tb_de_para_unidade WHERE cd_unidade_legado = '106'")[0]
     assert (manual["fk_id_opm"], manual["metodo"]) == (6, "MANUAL")
@@ -210,7 +210,7 @@ def test_listagem_traz_pendentes_primeiro_com_viaturas_na_contingencia(client, a
     assert [(d["cd_unidade_legado"], d["situacao"], d["qtd_viaturas_contingencia"]) for d in de_para[:3]] == [
         ("103", "PENDENTE", 2), ("105", "CONFIRMADO", 1), ("106", "SEM_CORRESPONDENCIA", 1),
     ]  # a 105 está confirmada, mas para uma OPM inativa: também precisa de decisão
-    assert de_para[0]["nome_opm"] == "3º Batalhão de Polícia Militar - Sul"
+    assert de_para[0]["nome_opm"] == "2ª CIA PM - 1º BPM"
 
 
 def test_confirmar_na_tela_tira_viaturas_da_contingencia_com_historico(client, viatura, consultar, apos_carga):

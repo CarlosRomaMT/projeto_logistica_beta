@@ -11,7 +11,10 @@ from app.main import app
 from app.services import ia_de_para as ia
 from app.services.de_para import sincronizar_de_para
 
-# Na subida, 103 ("3º BTL PM") fica PENDENTE por semelhança (OPM 3) e 106 ("BPTRAN") SEM_CORRESPONDENCIA.
+# Na subida, 103 fica PENDENTE por semelhança (OPM 3); 106 (sigla), 107 (núcleo citando a superior),
+# 108 (núcleo que virou pelotão), 109 (sede de CR) e 110 (unidade elevada) ficam SEM_CORRESPONDENCIA.
+D103 = "2ª CIA PM SANTA AURORA - 1º BPM"
+AGUARDANDO = 6
 
 
 class IaFalsa:
@@ -66,13 +69,13 @@ def sugerir(client, usuario="sgt.revisor"):
 
 
 def test_ia_sugere_mas_nao_confirma_nem_move_viatura(client, viatura, consultar):
-    usar_ia(IaFalsa({"BPTRAN": aceita(6), "3º BTL PM": aceita(3)}))
+    usar_ia(IaFalsa({"BPTRAN": aceita(6), D103: aceita(3)}))
 
     resp = sugerir(client)
 
     assert resp.status_code == 200
     corpo = resp.json()
-    assert (corpo["analisadas"], corpo["sugestoes_novas"], corpo["ia_disponivel"]) == (2, 2, True)
+    assert (corpo["analisadas"], corpo["sugestoes_novas"], corpo["ia_disponivel"]) == (AGUARDANDO, 2, True)
     assert "2 sugestão(ões) nova(s)" in corpo["mensagem"]
     bptran = de_para(client, "106")
     assert (bptran["situacao"], bptran["metodo"], bptran["id_opm"]) == ("PENDENTE", "IA", 6)
@@ -83,18 +86,19 @@ def test_ia_sugere_mas_nao_confirma_nem_move_viatura(client, viatura, consultar)
     assert viatura("GHI2O22")["fk_id_opm_unidade"] is None
     assert consultar("SELECT count(*) AS n FROM tb_historico_movimentacao")[0]["n"] == 0
     execucoes = consultar("SELECT cd_unidade_legado, resultado, usuario FROM tb_execucao_ia ORDER BY id")
-    assert [tuple(e.values()) for e in execucoes] == [("103", "ACEITA", "sgt.revisor"),
-                                                      ("106", "ACEITA", "sgt.revisor")]
+    assert len(execucoes) == AGUARDANDO  # toda chamada fica registrada
+    assert [tuple(e.values()) for e in execucoes if e["resultado"] == "ACEITA"] == [
+        ("103", "ACEITA", "sgt.revisor"), ("106", "ACEITA", "sgt.revisor")]
 
 
 def test_quando_a_ia_discorda_a_opiniao_da_semelhanca_fica_registrada(client):
-    usar_ia(IaFalsa({"3º BTL PM": aceita(2)}))
+    usar_ia(IaFalsa({D103: aceita(2)}))
 
     sugerir(client)
 
     linha = de_para(client, "103")
     assert (linha["metodo"], linha["id_opm"]) == ("IA", 2)
-    assert linha["observacao"].startswith("A semelhança de nome indicava: 3º Batalhão de Polícia Militar - Sul")
+    assert linha["observacao"].startswith("A semelhança de nome indicava: 2ª CIA PM - 1º BPM")
 
 
 def test_confirmar_a_sugestao_da_ia_lota_as_viaturas_pelo_fluxo_normal(client, viatura, consultar):
@@ -115,7 +119,10 @@ def test_candidatas_sao_so_opms_ativas_sem_a_contingencia(client):
 
     sugerir(client)
 
-    assert set(falsa.candidatas["BPTRAN"]) == {1, 2, 3, 4, 6}  # sem a OPM 0 e sem a 5 (inativa)
+    assert len(falsa.candidatas) == AGUARDANDO
+    for ids in falsa.candidatas.values():
+        assert len(ids) <= ia.IA_MAX_CANDIDATAS and not {0, 5} & set(ids)  # sem a OPM 0 e sem a 5 (inativa)
+    assert 6 in falsa.candidatas["BPTRAN"] and 11 in falsa.candidatas["1º ESQ IND POLICIAMENTO MONTADO"]
 
 
 def test_ia_que_responde_nenhuma_mantem_a_linha_sem_sugestao(client):
@@ -123,7 +130,7 @@ def test_ia_que_responde_nenhuma_mantem_a_linha_sem_sugestao(client):
 
     corpo = sugerir(client).json()
 
-    assert corpo["sem_correspondencia"] == 2
+    assert corpo["sem_correspondencia"] == AGUARDANDO
     linha = de_para(client, "106")
     assert (linha["situacao"], linha["id_opm"], linha["ia_resultado"]) == ("SEM_CORRESPONDENCIA", None,
                                                                            "SEM_CORRESPONDENCIA")
@@ -139,7 +146,7 @@ def test_resposta_fora_do_contrato_e_descartada_e_a_semelhanca_continua(client):
 
     corpo = sugerir(client).json()
 
-    assert corpo["descartadas"] == 2
+    assert corpo["descartadas"] == AGUARDANDO
     assert "descartada(s) pela validação" in corpo["mensagem"]
     linha = de_para(client, "103")
     assert (linha["metodo"], linha["id_opm"], linha["ia_resultado"]) == ("SIMILARIDADE", 3, "DESCARTADA")
@@ -153,20 +160,20 @@ def test_sugerir_exige_revisor(client):
 
 def test_ia_nunca_altera_decisao_humana(client):
     client.post("/api/de-para/103/confirmar", json={"id_opm": 3, "usuario": "sgt.revisor"})
-    usar_ia(IaFalsa({"3º BTL PM": aceita(2)}))
+    usar_ia(IaFalsa({D103: aceita(2)}))
 
     corpo = sugerir(client).json()
 
-    assert corpo["analisadas"] == 1  # só a 106 ainda aguardava
+    assert corpo["analisadas"] == AGUARDANDO - 1  # a 103 já tinha decisão humana
     assert (de_para(client, "103")["situacao"], de_para(client, "103")["id_opm"]) == ("CONFIRMADO", 3)
 
 
 def test_confirmacao_feita_enquanto_a_ia_pensava_prevalece(client):
     def revisor_confirma_antes(descricao):
-        if descricao == "3º BTL PM":
+        if descricao == D103:
             client.post("/api/de-para/103/confirmar", json={"id_opm": 3, "usuario": "sgt.revisor"})
 
-    usar_ia(IaFalsa({"3º BTL PM": aceita(2)}, ao_chamar=revisor_confirma_antes))
+    usar_ia(IaFalsa({D103: aceita(2)}, ao_chamar=revisor_confirma_antes))
 
     sugerir(client)
 
@@ -188,12 +195,14 @@ def test_ia_fora_do_ar_avisa_registra_e_mantem_as_sugestoes(client, consultar):
 
     assert resp.status_code == 200
     corpo = resp.json()
-    assert (corpo["ia_disponivel"], corpo["falhas"]) == (False, 2)
+    assert (corpo["ia_disponivel"], corpo["falhas"]) == (False, AGUARDANDO)
     assert corpo["mensagem"].startswith("IA indisponível (qwen2.5:7b)")
     assert (de_para(client, "103")["metodo"], de_para(client, "103")["ia_resultado"]) == ("SIMILARIDADE", None)
-    registros = consultar("SELECT resultado, motivo FROM tb_execucao_ia")
-    assert {tuple(r.values()) for r in registros} == {("INDISPONIVEL", "SEM_CONEXAO")}
-    assert client.get("/api/de-para/ia/execucoes").json()[0]["motivo"] == "SEM_CONEXAO"
+    registros = consultar("SELECT resultado, motivo FROM tb_execucao_ia ORDER BY id")
+    # 3 tentativas reais; depois o disjuntor abre e as demais nem chamam o Ollama.
+    assert [tuple(r.values()) for r in registros] == (
+        [("INDISPONIVEL", "SEM_CONEXAO")] * 3 + [("INDISPONIVEL", "DISJUNTOR_ABERTO")] * (AGUARDANDO - 3))
+    assert client.get("/api/de-para/ia/execucoes").json()[0]["motivo"] == "DISJUNTOR_ABERTO"
 
 
 def test_ia_desativada_na_configuracao(client):

@@ -5,10 +5,12 @@ DROP TABLE IF EXISTS tb_execucao_ia, tb_correcao_divergencia, tb_notificacao_pen
     tb_usuario_p4, tb_viatura, tb_de_para_unidade, tb_unidade_legado, tb_opm CASCADE;
 
 -- Cadastro corporativo de OPMs (padrão novo).
+-- Espelha sgpm.opm: nome em maiúsculas e sem acento, abreviatura própria (opm_abreviatura).
 CREATE TABLE tb_opm (
-    id_opm INTEGER PRIMARY KEY,
-    nome   VARCHAR(120) NOT NULL,
-    status VARCHAR(10)  NOT NULL CHECK (status IN ('ATIVA', 'INATIVA'))
+    id_opm      INTEGER PRIMARY KEY,
+    nome        VARCHAR(120) NOT NULL,
+    abreviatura VARCHAR(40),
+    status      VARCHAR(10)  NOT NULL CHECK (status IN ('ATIVA', 'INATIVA'))
 );
 
 -- Cadastro antigo de unidades, referenciado por tb_viatura.cd_unidade_legado.

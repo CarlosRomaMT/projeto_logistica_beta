@@ -1,23 +1,36 @@
--- Dados FICTÍCIOS que reproduzem o problema: viaturas lotadas só pela coluna antiga.
+-- Dados FICTÍCIOS (cidades e unidades inventadas) que reproduzem os padrões encontrados no banco de
+-- desenvolvimento (05/11/2026): núcleo citando a unidade superior, núcleo que virou pelotão, sede de
+-- comando regional, sigla, unidade elevada/renomeada, OPM extinta, legado vazio ou inexistente e a
+-- divergência entre a coluna antiga e a nova. Nomes das OPMs em maiúsculas e sem acento, como em sgpm.opm.
 
-INSERT INTO tb_opm (id_opm, nome, status) VALUES
-    (0, 'OPM 0 - Sem ligação (contingência)',             'ATIVA'),
-    (1, '1º Batalhão de Polícia Militar - Centro',         'ATIVA'),
-    (2, '2º Batalhão de Polícia Militar - Norte',          'ATIVA'),
-    (3, '3º Batalhão de Polícia Militar - Sul',            'ATIVA'),
-    (4, '1ª Companhia Independente de Polícia Militar',    'ATIVA'),
-    (5, '5º Batalhão de Polícia Militar (extinto)',        'INATIVA'),
-    (6, 'Batalhão de Polícia Militar de Trânsito',         'ATIVA');
+INSERT INTO tb_opm (id_opm, nome, abreviatura, status) VALUES
+    (0,  'OPM 0 - SEM LIGACAO (CONTINGENCIA)',                             'OPM 0',                    'ATIVA'),
+    (1,  '1º BATALHAO DE POLICIA MILITAR - SANTA AURORA',                  '1º BPM - SANTA AURORA',    'ATIVA'),
+    (2,  '2º BATALHAO DE POLICIA MILITAR - NOVA PRIMAVERA',                '2º BPM - NOVA PRIMAVERA',  'ATIVA'),
+    (3,  '2ª CIA PM - 1º BPM',                                             '2ª CIA PM - 1º BPM',       'ATIVA'),
+    (4,  '1ª COMPANHIA INDEPENDENTE DE POLICIA MILITAR - SERRA DOURADA',   '1ª CIPM - SERRA DOURADA',  'ATIVA'),
+    (5,  '5º BATALHAO DE POLICIA MILITAR - BOA VISTA DO SUL',              '5º BPM - EXTINTO',         'INATIVA'),
+    (6,  'BATALHAO DE POLICIA MILITAR DE TRANSITO',                        'BPMTRAN - CESP',           'ATIVA'),
+    (7,  'NUCLEO PM - RIO CLARO DO NORTE',                                 'NPM - RIO CLARO DO NORTE', 'ATIVA'),
+    (8,  '1º PELOTAO PM - LAGO AZUL',                                      '1º PEL PM - 2º BPM',       'ATIVA'),
+    (9,  '12º COMANDO REGIONAL',                                           '12º CR',                   'ATIVA'),
+    (10, '3ª CIA PM - 2º BPM',                                             '3ª CIA PM - 2º BPM',       'ATIVA'),
+    (11, 'REGIMENTO DE POLICIAMENTO MONTADO',                              'RPMON - CESP',             'ATIVA');
 
--- Descrições do cadastro antigo: abreviadas e com grafias diferentes para a mesma unidade.
+-- Cadastro antigo (como geral.tb_upm): abreviado, com grafias diferentes para a mesma unidade e,
+-- muitas vezes, citando a unidade superior depois do hífen.
 INSERT INTO tb_unidade_legado (cd_unidade, ds_unidade) VALUES
-    ('101', '1º BPM - CENTRO'),               -- igual à OPM 1 após normalizar
-    ('111', 'PRIMEIRO BATALHAO PM CENTRO'),   -- outra grafia da OPM 1
-    ('102', '2 B.P.M. NORTE'),                -- igual à OPM 2 após normalizar
-    ('103', '3º BTL PM'),                     -- parecida com a OPM 3 (falta "Sul"): pendente
-    ('104', '1ª CIA IND PM'),                 -- igual à OPM 4 após normalizar
-    ('105', '5º BPM (EXTINTO)'),              -- corresponde a uma OPM inativa
-    ('106', 'BPTRAN');                        -- sigla sem correspondência automática
+    ('101', '1º BPM - SANTA AURORA'),               -- igual à OPM 1 após normalizar
+    ('111', 'PRIMEIRO BATALHAO PM SANTA AURORA'),   -- outra grafia da OPM 1 (relação N:1)
+    ('102', '2 B.P.M. NOVA PRIMAVERA'),             -- igual à OPM 2 após normalizar
+    ('103', '2ª CIA PM SANTA AURORA - 1º BPM'),     -- companhia com a cidade no meio: semelhança (pendente)
+    ('104', '1ª CIA IND PM SERRA DOURADA'),         -- igual à OPM 4 após normalizar
+    ('105', '5º BPM - BOA VISTA DO SUL'),           -- corresponde a uma OPM extinta (inativa)
+    ('106', 'BPTRAN'),                              -- sigla: sem correspondência por semelhança
+    ('107', 'NPM RIO CLARO DO NORTE - 2º BPM'),     -- núcleo citando a superior: OPM 7, não a 2ª/3ª CIA
+    ('108', 'NPM LAGO AZUL'),                       -- núcleo que virou pelotão: OPM 8
+    ('109', 'CR 12 - SEDE'),                        -- sede de comando regional: OPM 9
+    ('110', '1º ESQ IND POLICIAMENTO MONTADO');      -- unidade elevada a regimento: OPM 11
 
 INSERT INTO tb_viatura (placa, modelo, status_operacional, cd_unidade_legado, fk_id_opm_unidade) VALUES
     -- Unidade antiga com correspondência exata: resolvidas pela carga (RF04).
@@ -37,11 +50,15 @@ INSERT INTO tb_viatura (placa, modelo, status_operacional, cd_unidade_legado, fk
     ('FGH1K11', 'Toyota Corolla',    'DISPONIVEL', NULL,  NULL),
     ('FGH2L22', 'Toyota Corolla',    'DISPONIVEL', '',    NULL),
     ('FGH3M33', 'Chevrolet Spin',    'MANUTENCAO', NULL,  NULL),
-    -- Código inexistente no cadastro antigo: contingência.
+    -- Código inexistente no cadastro antigo (UPM órfã): contingência.
     ('GHI1N11', 'Ford Ranger',       'DISPONIVEL', '999', NULL),
     ('GHI3P33', 'Toyota Hilux',      'CAUTELADA',  '000', NULL),
-    -- Unidade antiga sem nenhuma OPM parecida: contingência.
+    -- Sem correspondência por semelhança (alvo da IA): contingência até alguém decidir.
     ('GHI2O22', 'Mitsubishi L200',   'DISPONIVEL', '106', NULL),
+    ('KLM1A11', 'Toyota Hilux',      'DISPONIVEL', '107', NULL),
+    ('KLM2B22', 'Chevrolet S10',     'DISPONIVEL', '108', NULL),
+    ('KLM3C33', 'Renault Duster',    'MANUTENCAO', '109', NULL),
+    ('KLM4D44', 'Mitsubishi L200',   'DISPONIVEL', '110', NULL),
     -- Baixadas: não são "ativas", a carga não mexe.
     ('HIJ1Q11', 'Fiat Palio',        'BAIXADA',    '101', NULL),
     ('HIJ2R22', 'Fiat Palio',        'BAIXADA',    '102', NULL),

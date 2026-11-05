@@ -102,7 +102,7 @@ def test_criacao_com_opm_inativa_nao_grava(client, consultar):
 def test_listagem_nao_expoe_coluna_legada(client):
     viaturas = client.get("/api/viaturas").json()
 
-    assert len(viaturas) == 20
+    assert len(viaturas) == 24
     assert all("cd_unidade_legado" not in v for v in viaturas)
 
 
@@ -111,15 +111,23 @@ def test_diagnostico_mostra_unidade_antiga_e_de_para(client, tmp_path):
 
     legado = {v["cd_unidade_legado"]: v for v in client.get("/api/diagnostico/legado").json()}
 
-    assert legado["111"]["ds_unidade_legado"] == "PRIMEIRO BATALHAO PM CENTRO"
+    assert legado["111"]["ds_unidade_legado"] == "PRIMEIRO BATALHAO PM SANTA AURORA"
     assert (legado["111"]["situacao_de_para"], legado["111"]["id_opm_de_para"]) == ("CONFIRMADO", 1)
     assert legado["103"]["situacao_de_para"] == "PENDENTE"
     assert legado["999"]["ds_unidade_legado"] is None
 
 
 def test_busca_de_opms_oferece_so_ativas_e_sem_contingencia(client):
-    nomes = [o["nome"] for o in client.get("/api/opms").json()]
+    ids = [o["id_opm"] for o in client.get("/api/opms").json()]
 
-    assert "5º Batalhão de Polícia Militar (extinto)" not in nomes
-    assert not any(n.startswith("OPM 0") for n in nomes)
-    assert [o["id_opm"] for o in client.get("/api/opms", params={"q": "trânsito"}).json()] == [6]
+    assert 5 not in ids  # extinta
+    assert 0 not in ids  # contingência
+
+
+@pytest.mark.parametrize("termo, esperado", [
+    ("trânsito", [6]),   # o cadastro grava sem acento (TRANSITO): a busca ignora acentos
+    ("Rio Claro", [7]),  # ignora maiúsculas
+    ("RPMON", [11]),     # também pela abreviatura
+])
+def test_busca_de_opms_ignora_acento_e_usa_abreviatura(client, termo, esperado):
+    assert [o["id_opm"] for o in client.get("/api/opms", params={"q": termo}).json()] == esperado
