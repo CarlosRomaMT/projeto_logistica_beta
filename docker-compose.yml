@@ -1,0 +1,56 @@
+# Ambiente de desenvolvimento/demonstração. Credenciais apenas locais e fictícias.
+x-api-env: &api-env
+  DATABASE_URL: postgresql+psycopg://frota:frota@postgres:5432/frota
+  TEST_DATABASE_URL: postgresql+psycopg://frota:frota@postgres:5432/frota_test
+  DB_SQL_DIR: /db
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: frota
+      POSTGRES_PASSWORD: frota
+      POSTGRES_DB: frota
+    ports:
+      - "5433:5432"
+    volumes:
+      # Na primeira subida: cria frota_test, o schema e os dados fictícios.
+      - ./db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U frota -d frota"]
+      interval: 3s
+      retries: 20
+
+  logistica-api:
+    build: ./logistica-api
+    environment: *api-env
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./db:/db:ro
+      - ./relatorios:/app/relatorios
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cautela-api:
+    build: ./cautela-api
+    environment: *api-env
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./db:/db:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    environment:
+      LOGISTICA_API_URL: http://logistica-api:8000
+      CAUTELA_API_URL: http://cautela-api:8000
+    ports:
+      - "5173:5173"
+    depends_on:
+      - logistica-api
+      - cautela-api

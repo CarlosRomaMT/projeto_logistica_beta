@@ -1,0 +1,238 @@
+{
+  "gerado_em": "2026-11-05T14:06:47.092606",
+  "resumo": {
+    "frota_operacional": 2459,
+    "com_problema_de_lotacao": 482,
+    "percentual_com_problema": 19.6,
+    "invisiveis_no_cautela": 201
+  },
+  "dados": {
+    "estrutura_fks": [],
+    "volumes": [
+      {
+        "veiculos": 6883,
+        "veiculos_operacionais": 2459,
+        "upms": 408,
+        "opms": 520
+      }
+    ],
+    "opm_vigencia": [
+      {
+        "vigencia": "desconsiderada (E/C/outros)",
+        "opms": 4
+      },
+      {
+        "vigencia": "não vigente (N)",
+        "opms": 58
+      },
+      {
+        "vigencia": "vigente (S)",
+        "opms": 458
+      }
+    ],
+    "lotacao_operacional": [
+      {
+        "situacao": "1. sem cod_opm (invisível no Cautela)",
+        "viaturas": 172
+      },
+      {
+        "situacao": "2. cod_opm inexistente em sgpm.opm (invisível)",
+        "viaturas": 29
+      },
+      {
+        "situacao": "3. OPM não vigente (sem check-in)",
+        "viaturas": 263
+      },
+      {
+        "situacao": "4. OPM com vigência desconsiderada (E/C)",
+        "viaturas": 18
+      },
+      {
+        "situacao": "5. OPM vigente (OK)",
+        "viaturas": 1977
+      }
+    ],
+    "sem_opm_por_situacao": [
+      {
+        "cod_situacao": 1,
+        "descricao": "ATIVO",
+        "viaturas_sem_cod_opm": 131
+      },
+      {
+        "cod_situacao": 2,
+        "descricao": "MANUTENÇÃO PREVENTIVA",
+        "viaturas_sem_cod_opm": 28
+      },
+      {
+        "cod_situacao": 4,
+        "descricao": "SUBSTITUIDO",
+        "viaturas_sem_cod_opm": 28
+      },
+      {
+        "cod_situacao": 8,
+        "descricao": "CARRO RESERVA",
+        "viaturas_sem_cod_opm": 13
+      },
+      {
+        "cod_situacao": 9,
+        "descricao": "INSERVIVEL PARA DESCARGA",
+        "viaturas_sem_cod_opm": 4
+      },
+      {
+        "cod_situacao": 10,
+        "descricao": "RECOLHIDO",
+        "viaturas_sem_cod_opm": 22
+      },
+      {
+        "cod_situacao": 11,
+        "descricao": "TRANSFERIDA PARA OUTRA UPM",
+        "viaturas_sem_cod_opm": 1
+      }
+    ],
+    "integridade": [
+      {
+        "cod_upm_orfao": 75,
+        "cod_upm_orfao_operacional": 13,
+        "cod_opm_inexistente": 57,
+        "cod_opm_inexistente_operacional": 29,
+        "sem_nenhuma_lotacao": 0
+      }
+    ],
+    "ponte_opm_cod_upm": [
+      {
+        "opms": 520,
+        "com_cod_upm": 6,
+        "cod_upm_valido": 0
+      }
+    ],
+    "empirico_pureza": [
+      {
+        "faixa": "a. todas as viaturas numa única OPM",
+        "upms": 265,
+        "viaturas": "4680"
+      },
+      {
+        "faixa": "b. OPM dominante com 80 por cento ou mais",
+        "upms": 38,
+        "viaturas": "1857"
+      },
+      {
+        "faixa": "c. espalhada",
+        "upms": 8,
+        "viaturas": "119"
+      }
+    ],
+    "empirico_reverso": [
+      {
+        "upms_por_opm": 1,
+        "opms": 273
+      },
+      {
+        "upms_por_opm": 2,
+        "opms": 24
+      },
+      {
+        "upms_por_opm": 3,
+        "opms": 8
+      },
+      {
+        "upms_por_opm": 4,
+        "opms": 2
+      },
+      {
+        "upms_por_opm": 5,
+        "opms": 1
+      },
+      {
+        "upms_por_opm": 7,
+        "opms": 1
+      },
+      {
+        "upms_por_opm": 12,
+        "opms": 1
+      }
+    ],
+    "cobertura_sem_opm": [
+      {
+        "operacional": true,
+        "resolucao": "1. resolvível pelo histórico (confiável)",
+        "viaturas": 117
+      },
+      {
+        "operacional": true,
+        "resolucao": "2. histórico fraco (revisão humana)",
+        "viaturas": 2
+      },
+      {
+        "operacional": true,
+        "resolucao": "3. dominante não vigente (buscar sucessora)",
+        "viaturas": 33
+      },
+      {
+        "operacional": true,
+        "resolucao": "4. UPM sem histórico (alvo da IA por nome)",
+        "viaturas": 12
+      },
+      {
+        "operacional": true,
+        "resolucao": "5. UPM órfã (sem nome: nada resolve)",
+        "viaturas": 8
+      },
+      {
+        "operacional": false,
+        "resolucao": "1. resolvível pelo histórico (confiável)",
+        "viaturas": 8
+      },
+      {
+        "operacional": false,
+        "resolucao": "3. dominante não vigente (buscar sucessora)",
+        "viaturas": 2
+      },
+      {
+        "operacional": false,
+        "resolucao": "4. UPM sem histórico (alvo da IA por nome)",
+        "viaturas": 39
+      },
+      {
+        "operacional": false,
+        "resolucao": "5. UPM órfã (sem nome: nada resolve)",
+        "viaturas": 6
+      }
+    ],
+    "divergencias_operacional": [
+      {
+        "comparacao": "DIVERGENTE em UPM confiável",
+        "viaturas": 94
+      },
+      {
+        "comparacao": "divergente em UPM espalhada",
+        "viaturas": 38
+      },
+      {
+        "comparacao": "igual à dominante",
+        "viaturas": 2155
+      }
+    ],
+    "upms_sem_historico": [
+      {
+        "upms_sem_historico": 98
+      }
+    ],
+    "qualidade_nomes": [
+      {
+        "tabela": "geral.tb_upm",
+        "total": 408,
+        "nome_vazio": 0,
+        "com_sigla": 6,
+        "nomes_duplicados": 1
+      },
+      {
+        "tabela": "sgpm.opm (vigentes)",
+        "total": 458,
+        "nome_vazio": 0,
+        "com_sigla": 458,
+        "nomes_duplicados": 2
+      }
+    ]
+  }
+}

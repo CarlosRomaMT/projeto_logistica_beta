@@ -1,0 +1,235 @@
+import { useCallback, useEffect, useState } from 'react'
+import { ErroApi, requisitar } from '../api/client'
+import { AVISO_SEM_REVISOR, EtapaTitulo } from '../components/EtapaTitulo/EtapaTitulo'
+import { SeletorOpm } from '../components/SeletorOpm/SeletorOpm'
+import type { DeParaRevisao, Opm, ResultadoConfirmacao } from '../types'
+
+interface Props {
+  revisor: string
+  pedirRevisor: () => void
+  sinalRecarga: number
+  onAlterado: () => void
+}
+
+type Aviso = { tipo: 'sucesso' | 'erro'; texto: string }
+
+const ROTULO = {
+  PENDENTE: { classe: 'selo-manutencao', texto: 'Sugestão a confirmar' },
+  SEM_CORRESPONDENCIA: { classe: 'selo-erro', texto: 'Sem sugestão: escolha a OPM' },
+  OPM_INATIVA: { classe: 'selo-erro', texto: 'OPM inativa: escolha outra' },
+  ALTERANDO: { classe: 'selo', texto: 'Alterando' },
+}
+
+/** Associada a uma OPM extinta: confirmada, mas as viaturas não têm para onde ir. */
+const opmInativa = (d: DeParaRevisao) => d.situacao === 'CONFIRMADO' && d.status_opm !== 'ATIVA'
+
+function sugestaoComoOpm(d: DeParaRevisao): Opm | null {
+  return d.id_opm !== null && d.nome_opm && !opmInativa(d) ? { id_opm: d.id_opm, nome: d.nome_opm, status: 'ATIVA' } : null
+}
+
+/** Etapa 1 (de-para): confirma ou altera a OPM de cada unidade antiga e lota na hora as viaturas dela. */
+export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterado }: Props) {
+  const [linhas, setLinhas] = useState<DeParaRevisao[]>([])
+  const [escolhas, setEscolhas] = useState<Record<string, Opm | null>>({})
+  const [editando, setEditando] = useState<Set<string>>(new Set())
+  const [enviando, setEnviando] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<Aviso | null>(null)
+
+  const carregar = useCallback(() => {
+    requisitar<DeParaRevisao[]>('/logistica/api/de-para')
+      .then((dados) => {
+        setLinhas(dados)
+        setEscolhas(Object.fromEntries(dados.map((d) => [d.cd_unidade_legado, sugestaoComoOpm(d)])))
+      })
+      .catch((e: Error) => setAviso({ tipo: 'erro', texto: e.message }))
+  }, [])
+
+  useEffect(carregar, [carregar, sinalRecarga])
+
+  // O pedido de revisor deixa de valer assim que o campo é preenchido.
+  useEffect(() => {
+    if (revisor.trim()) setAviso((a) => (a?.texto === AVISO_SEM_REVISOR ? null : a))
+  }, [revisor])
+
+  function alternarEdicao(cd: string, ligar: boolean) {
+    setEditando((atual) => {
+      const novo = new Set(atual)
+      if (ligar) novo.add(cd)
+      else novo.delete(cd)
+      return novo
+    })
+  }
+
+  async function confirmar(cd: string) {
+    if (!revisor.trim()) {
+      setAviso({ tipo: 'erro', texto: AVISO_SEM_REVISOR })
+      pedirRevisor()
+      return
+    }
+    const escolhida = escolhas[cd]
+    if (!escolhida) {
+      setAviso({ tipo: 'erro', texto: `Escolha a OPM correta da unidade ${cd} antes de confirmar.` })
+      return
+    }
+    setEnviando(cd)
+    setAviso(null)
+    try {
+      const r = await requisitar<ResultadoConfirmacao>(`/logistica/api/de-para/${cd}/confirmar`, {
+        method: 'POST',
+        body: JSON.stringify({ id_opm: escolhida.id_opm, usuario: revisor.trim() }),
+      })
+      const partes = [`Unidade ${cd} associada a ${r.de_para.nome_opm}.`]
+      partes.push(r.movidas.length ? `Viaturas lotadas nela: ${r.movidas.join(', ')}.` : 'Nenhuma viatura precisou mudar.')
+      if (r.bloqueadas.length) {
+        partes.push(
+          `Não puderam ser lotadas (${r.bloqueadas.map((b) => `${b.placa}: ${b.status.toLowerCase()}`).join(', ')}).`,
+        )
+      }
+      setAviso({ tipo: 'sucesso', texto: partes.join(' ') })
+      alternarEdicao(cd, false)
+      onAlterado()
+    } catch (erro) {
+      setAviso({ tipo: 'erro', texto: erro instanceof ErroApi ? erro.message : 'Falha de comunicação.' })
+    } finally {
+      setEnviando(null)
+    }
+  }
+
+  const precisaDecisao = (d: DeParaRevisao) => d.situacao !== 'CONFIRMADO' || opmInativa(d)
+  const pendentes = linhas.filter((d) => precisaDecisao(d) || editando.has(d.cd_unidade_legado))
+  const confirmadas = linhas.filter((d) => !precisaDecisao(d) && !editando.has(d.cd_unidade_legado))
+  const aguardandoDecisao = linhas.filter(precisaDecisao).length
+
+  function rotulo(d: DeParaRevisao) {
+    if (opmInativa(d)) return ROTULO.OPM_INATIVA
+    if (d.situacao === 'CONFIRMADO') return ROTULO.ALTERANDO
+    return ROTULO[d.situacao]
+  }
+
+  return (
+    <section className="painel">
+      <EtapaTitulo
+        numero={1}
+        titulo="Associar as unidades antigas às OPMs"
+        situacao={linhas.length ? (aguardandoDecisao ? `${aguardandoDecisao} unidade(s) aguardando decisão` : 'Concluída') : null}
+        pendente={aguardandoDecisao > 0}
+      />
+      <p className="nota">
+        O cadastro antigo identifica a unidade só pelo nome, escrito de várias formas (ex.: "3º BTL PM"). O sistema
+        sugere a OPM com o nome mais parecido; confirme a sugestão ou escolha outra. O que você confirma aqui é aplicado
+        na hora às viaturas da unidade, com registro no histórico. As associações automáticas (nome idêntico) são
+        aplicadas pela carga (etapa 2). Uma associação errada pode ser alterada em <strong>Alterar</strong>: as viaturas
+        lotadas por ela e nunca movimentadas depois vão para a nova OPM.
+      </p>
+      {aviso && (
+        <div role="alert" className={`aviso aviso-${aviso.tipo}`}>
+          {aviso.texto}
+        </div>
+      )}
+
+      <h3>Aguardando decisão ({pendentes.length})</h3>
+      {/* Sem área de rolagem: ela cortaria a lista de opções do SeletorOpm. */}
+      <div>
+        <table>
+          <thead>
+            <tr>
+              <th>Unidade antiga</th>
+              <th>Situação</th>
+              <th title="Viaturas ativas desta unidade ainda sem OPM ou na OPM 0">Viaturas sem OPM</th>
+              <th className="col-opm">OPM correta</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {pendentes.map((d) => {
+              const r = rotulo(d)
+              const emEdicao = editando.has(d.cd_unidade_legado) && !precisaDecisao(d)
+              return (
+                <tr key={d.cd_unidade_legado}>
+                  <td>
+                    <span className="placa">{d.cd_unidade_legado}</span> {d.ds_unidade_legado}
+                  </td>
+                  <td>
+                    <span className={`selo ${r.classe}`}>{r.texto}</span>
+                    {d.situacao === 'PENDENTE' && d.score !== null && (
+                      <div className="suave">semelhança {Math.round(d.score * 100)}%</div>
+                    )}
+                    {opmInativa(d) && <div className="suave">associada a {d.nome_opm}</div>}
+                    {emEdicao && <div className="suave">hoje: {d.nome_opm}</div>}
+                    {d.observacao && <div className="suave">{d.observacao}</div>}
+                  </td>
+                  <td>{d.qtd_viaturas_contingencia}</td>
+                  <td className="col-opm">
+                    <SeletorOpm
+                      valor={escolhas[d.cd_unidade_legado] ?? null}
+                      onChange={(opm) => setEscolhas((e) => ({ ...e, [d.cd_unidade_legado]: opm }))}
+                    />
+                  </td>
+                  <td>
+                    <div className="linha">
+                      <button
+                        type="button"
+                        disabled={enviando !== null}
+                        onClick={() => confirmar(d.cd_unidade_legado)}
+                      >
+                        {enviando === d.cd_unidade_legado ? 'Gravando…' : 'Confirmar'}
+                      </button>
+                      {emEdicao && (
+                        <button type="button" className="secundario" onClick={() => alternarEdicao(d.cd_unidade_legado, false)}>
+                          Cancelar
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )
+            })}
+            {pendentes.length === 0 && (
+              <tr>
+                <td colSpan={5} className="vazio">
+                  {linhas.length ? 'Nenhuma unidade aguardando decisão.' : 'A lista de unidades antigas ainda não foi gerada. Ela é criada quando o sistema inicia: acione o suporte.'}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Confirmadas ({confirmadas.length})</h3>
+      <div className="rolagem">
+        <table>
+          <thead>
+            <tr>
+              <th>Unidade antiga</th>
+              <th>OPM</th>
+              <th>Como</th>
+              <th title="Viaturas ativas desta unidade ainda sem OPM ou na OPM 0: a carga (etapa 2) as lota">
+                Viaturas aguardando a carga
+              </th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {confirmadas.map((d) => (
+              <tr key={d.cd_unidade_legado}>
+                <td>
+                  <span className="placa">{d.cd_unidade_legado}</span> {d.ds_unidade_legado}
+                </td>
+                <td>{d.nome_opm}</td>
+                <td className="suave">
+                  {d.metodo === 'EXATO' ? 'Nome idêntico (automático)' : `Manual: ${d.confirmado_por ?? '—'}`}
+                </td>
+                <td>{d.qtd_viaturas_contingencia || ''}</td>
+                <td>
+                  <button type="button" className="secundario" onClick={() => alternarEdicao(d.cd_unidade_legado, true)}>
+                    Alterar
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  )
+}

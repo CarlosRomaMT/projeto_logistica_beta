@@ -1,0 +1,49 @@
+stages:
+  - test
+  - build
+
+.testes-python:
+  stage: test
+  image: python:3.12-slim
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_USER: frota
+    POSTGRES_PASSWORD: frota
+    POSTGRES_DB: frota_test
+    TEST_DATABASE_URL: postgresql+psycopg://frota:frota@postgres:5432/frota_test
+    DB_SQL_DIR: $CI_PROJECT_DIR/db
+  script:
+    - cd $SERVICO
+    - pip install --no-cache-dir -r requirements.txt
+    - pytest -v
+
+test:logistica:
+  extends: .testes-python
+  variables:
+    SERVICO: logistica-api
+
+test:cautela:
+  extends: .testes-python
+  variables:
+    SERVICO: cautela-api
+
+test:avaliacao:
+  stage: test
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir -r logistica-api/requirements.txt
+    - python -m pytest avaliacao/tests -v
+
+build:frontend:
+  stage: build
+  image: node:22-alpine
+  script:
+    - cd frontend
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist
+    expire_in: 1 week
