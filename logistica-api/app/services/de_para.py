@@ -44,6 +44,11 @@ LIMIAR_SUGESTAO = 0.75
 # Se a segunda melhor OPM ficar a menos disso da primeira, a sugestão é marcada como ambígua.
 MARGEM_AMBIGUIDADE = 0.05
 
+# Histórico dos veículos: UPM cujas viaturas (já com a coluna nova, nunca movimentadas pelo sistema novo)
+# estão quase todas numa OPM. Evidência forte, mas com ruído no banco real: vira SUGESTÃO, não confirmação.
+HISTORICO_MINIMO_VIATURAS = 2
+HISTORICO_PUREZA_MINIMA = 0.8
+
 SITUACAO_CONFIRMADO = "CONFIRMADO"
 SITUACAO_PENDENTE = "PENDENTE"
 SITUACAO_SEM_CORRESPONDENCIA = "SEM_CORRESPONDENCIA"
@@ -101,9 +106,55 @@ def sugerir_opm(descricao: str, opms: list[dict]) -> Sugestao:
 # --- Persistência do de-para (tb_de_para_unidade) e sua aplicação nas viaturas ---
 
 
+@dataclass
+class Historico:
+    id_opm: int
+    nome_opm: str
+    viaturas_na_opm: int
+    viaturas_total: int
+
+    @property
+    def pureza(self) -> float:
+        return self.viaturas_na_opm / self.viaturas_total
+
+
+def historico_por_unidade(conn: Connection, pureza_minima: float = HISTORICO_PUREZA_MINIMA,
+                          minimo_viaturas: int = HISTORICO_MINIMO_VIATURAS) -> dict[str, Historico]:
+    """OPM dominante de cada unidade antiga, pelas viaturas que já têm as duas colunas.
+
+    Só conta viatura nunca movimentada pelo sistema novo (depois da implantação o legado fica congelado e
+    uma transferência legítima não diz nada sobre a unidade antiga) e fora da OPM 0. Só devolve unidades
+    com `minimo_viaturas` e `pureza_minima`, cuja OPM dominante está ativa.
+    """
+    linhas = conn.execute(text("""
+        WITH par AS (
+            SELECT v.cd_unidade_legado AS cd, v.fk_id_opm_unidade AS opm, count(*) AS n
+            FROM tb_viatura v
+            WHERE nullif(trim(v.cd_unidade_legado), '') IS NOT NULL
+              AND v.fk_id_opm_unidade IS NOT NULL AND v.fk_id_opm_unidade <> :contingencia
+              AND NOT EXISTS (SELECT 1 FROM tb_historico_movimentacao h WHERE h.id_viatura = v.id_viatura)
+            GROUP BY 1, 2
+        ), dom AS (
+            SELECT DISTINCT ON (cd) cd, opm, n, sum(n) OVER (PARTITION BY cd) AS total
+            FROM par ORDER BY cd, n DESC, opm
+        )
+        SELECT d.cd, d.opm, o.nome, d.n, d.total
+        FROM dom d JOIN tb_opm o ON o.id_opm = d.opm
+        WHERE o.status = :ativa AND d.total >= :minimo AND d.n::numeric / d.total >= :pureza
+    """), {"contingencia": ID_OPM_CONTINGENCIA, "ativa": STATUS_OPM_ATIVA, "minimo": minimo_viaturas,
+          "pureza": pureza_minima}).mappings()
+    return {linha["cd"].strip(): Historico(linha["opm"], linha["nome"], linha["n"], linha["total"]) for linha in linhas}
+
+
+def texto_historico(h: Historico) -> str:
+    return f"{h.viaturas_na_opm} de {h.viaturas_total} viaturas desta unidade já estão nesta OPM."
+
+
 def sincronizar_de_para(conn: Connection) -> int:
     """Cria o de-para das unidades antigas que ainda não têm um. Devolve quantas criou.
 
+    Camadas: nome idêntico (confirma) → histórico dos veículos (sugere) → semelhança de nome (sugere).
+    A IA entra depois, sob demanda, só onde não há sugestão pelo histórico.
     Decisões já gravadas (inclusive as manuais) nunca são sobrescritas. Pode rodar em paralelo
     (subida da API com vários workers, carga): quem chegar depois ignora o que já foi criado.
     """
@@ -119,9 +170,18 @@ def sincronizar_de_para(conn: Connection) -> int:
         ORDER BY u.cd_unidade
     """)).mappings().all()
 
+    historico = historico_por_unidade(conn)
+
     criadas = 0
     for unidade in novas:
         sugestao = sugerir_opm(unidade["ds_unidade"], opms)
+        observacao = "Ambígua: outra OPM com pontuação próxima" if sugestao.ambigua else None
+        h = historico.get(unidade["cd_unidade"].strip())
+        if h is not None and sugestao.situacao == SITUACAO_CONFIRMADO and h.id_opm != sugestao.id_opm:
+            observacao = f"Atenção: o histórico das viaturas indica {h.nome_opm} ({texto_historico(h)})"[:200]
+        elif h is not None and sugestao.situacao != SITUACAO_CONFIRMADO:
+            sugestao = Sugestao(SITUACAO_PENDENTE, h.id_opm, "HISTORICO", round(h.pureza, 3))
+            observacao = texto_historico(h)
         criadas += conn.execute(
             text("""
                 INSERT INTO tb_de_para_unidade
@@ -131,7 +191,7 @@ def sincronizar_de_para(conn: Connection) -> int:
             """),
             {"cd": unidade["cd_unidade"], "ds": unidade["ds_unidade"], "opm": sugestao.id_opm,
              "situacao": sugestao.situacao, "metodo": sugestao.metodo, "score": sugestao.score,
-             "obs": "Ambígua: outra OPM com pontuação próxima" if sugestao.ambigua else None},
+             "obs": observacao},
         ).rowcount
     return criadas
 
@@ -235,6 +295,23 @@ def aplicar_de_para_na_contingencia(conn: Connection, cd_unidade: str, usuario: 
             mover_viatura_na_transacao(conn, v["id_viatura"], id_opm, usuario, "CORRECAO_DE_PARA", implantacao=True)
             movidas.append(v["placa"])
     return {"movidas": movidas, "bloqueadas": bloqueadas}
+
+
+def confirmar_sugestoes_do_historico(conn: Connection, usuario: str) -> list[dict]:
+    """Decisão humana em lote: confirma todas as sugestões pelo histórico e lota as viaturas na hora.
+
+    Mesma transação para tudo (quem chama usa engine.begin()): se uma falhar, nada é gravado.
+    """
+    pendentes = conn.execute(text("""
+        SELECT cd_unidade_legado, fk_id_opm FROM tb_de_para_unidade
+        WHERE situacao = :pendente AND metodo = 'HISTORICO' ORDER BY cd_unidade_legado FOR UPDATE
+    """), {"pendente": SITUACAO_PENDENTE}).mappings().all()
+    resultado = []
+    for p in pendentes:
+        anterior = confirmar_de_para(conn, p["cd_unidade_legado"], p["fk_id_opm"], usuario)
+        aplicado = aplicar_de_para_na_contingencia(conn, p["cd_unidade_legado"], usuario, anterior)
+        resultado.append({"cd_unidade_legado": p["cd_unidade_legado"], **aplicado})
+    return resultado
 
 
 SQL_DE_PARA = """

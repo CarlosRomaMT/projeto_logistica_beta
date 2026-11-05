@@ -55,6 +55,12 @@ export interface StatusIa {
   motivo: string | null
 }
 
+export interface ResultadoConfirmacaoHistorico {
+  confirmadas: string[]
+  movidas: string[]
+  bloqueadas: { placa: string; status: string }[]
+}
+
 export interface ResultadoSugestaoIa {
   modelo: string
   analisadas: number

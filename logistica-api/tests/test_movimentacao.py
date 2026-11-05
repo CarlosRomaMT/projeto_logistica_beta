@@ -102,7 +102,7 @@ def test_criacao_com_opm_inativa_nao_grava(client, consultar):
 def test_listagem_nao_expoe_coluna_legada(client):
     viaturas = client.get("/api/viaturas").json()
 
-    assert len(viaturas) == 24
+    assert len(viaturas) == 72
     assert all("cd_unidade_legado" not in v for v in viaturas)
 
 

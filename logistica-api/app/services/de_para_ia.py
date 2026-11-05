@@ -18,7 +18,7 @@ from sqlalchemy.engine import Connection
 from app.core.config import ID_OPM_CONTINGENCIA, STATUS_OPM_ATIVA
 from app.core.db import engine
 from app.services import ia_de_para as ia
-from app.services.de_para import SITUACAO_PENDENTE, SITUACAO_SEM_CORRESPONDENCIA
+from app.services.de_para import SITUACAO_PENDENTE, SITUACAO_SEM_CORRESPONDENCIA, historico_por_unidade
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -68,12 +68,14 @@ def gravar_resultado(conn: Connection, alvo: dict, r: ia.RespostaIA, modelo: str
         sql = f"""UPDATE tb_de_para_unidade
                   SET fk_id_opm = :ia_opm, situacao = :pendente, metodo = 'IA', score = :confianca,
                       observacao = :observacao, {campos_ia}
-                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)"""
+                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)
+                    AND metodo IS DISTINCT FROM 'HISTORICO'"""
         params.update(pendente=SITUACAO_PENDENTE, observacao=_observacao(alvo, r))
     else:
         # Sem sugestão nova: a da semelhança (se houver) continua valendo; só registra o parecer da IA.
         sql = f"""UPDATE tb_de_para_unidade SET {campos_ia}
-                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)"""
+                  WHERE cd_unidade_legado = :cd AND situacao = ANY(:aguardando)
+                    AND metodo IS DISTINCT FROM 'HISTORICO'"""
     return conn.execute(text(sql), params).rowcount > 0
 
 
@@ -96,8 +98,9 @@ def _mensagem(cont: Counter, total: int, modelo: str, parou_no_meio: bool) -> st
 
 
 def exemplos_confirmados(conn: Connection) -> list[ia.Exemplo]:
-    """RAG: associações JÁ CONFIRMADAS (nome idêntico ou decisão humana) para OPM ativa. Sugestões
-    pendentes nunca viram exemplo, e cada confirmação nova melhora as sugestões seguintes."""
+    """RAG: associações JÁ CONFIRMADAS (nome idêntico ou decisão humana) para OPM ativa, mais os pares do
+    histórico dos veículos com pureza de 100% (a mesma fonte usada na avaliação). Sugestões por semelhança
+    ou da IA nunca viram exemplo; cada confirmação nova melhora as sugestões seguintes."""
     linhas = conn.execute(
         text("""
             SELECT d.cd_unidade_legado, d.ds_unidade_legado, o.nome
@@ -107,7 +110,13 @@ def exemplos_confirmados(conn: Connection) -> list[ia.Exemplo]:
         """),
         {"ativa": STATUS_OPM_ATIVA, "contingencia": ID_OPM_CONTINGENCIA},
     ).mappings()
-    return [ia.Exemplo(linha["cd_unidade_legado"], linha["ds_unidade_legado"], linha["nome"]) for linha in linhas]
+    exemplos = {linha["cd_unidade_legado"]: ia.Exemplo(linha["cd_unidade_legado"], linha["ds_unidade_legado"],
+                                                       linha["nome"]) for linha in linhas}
+    descricoes = dict(conn.execute(text("SELECT cd_unidade, ds_unidade FROM tb_unidade_legado")).all())
+    for cd, h in historico_por_unidade(conn, pureza_minima=1.0).items():
+        if cd not in exemplos and cd in descricoes:
+            exemplos[cd] = ia.Exemplo(cd, descricoes[cd], h.nome_opm)
+    return [exemplos[cd] for cd in sorted(exemplos)]
 
 
 def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
@@ -117,7 +126,8 @@ def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
                 SELECT d.cd_unidade_legado, d.ds_unidade_legado, d.fk_id_opm, d.metodo, d.score,
                        d.observacao, o.nome AS nome_opm
                 FROM tb_de_para_unidade d LEFT JOIN tb_opm o ON o.id_opm = d.fk_id_opm
-                WHERE d.situacao = ANY(:aguardando) ORDER BY d.cd_unidade_legado
+                WHERE d.situacao = ANY(:aguardando) AND d.metodo IS DISTINCT FROM 'HISTORICO'
+                ORDER BY d.cd_unidade_legado
             """),
             {"aguardando": list(AGUARDANDO)},
         ).mappings()]

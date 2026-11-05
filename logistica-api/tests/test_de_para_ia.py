@@ -137,8 +137,7 @@ def test_ia_que_responde_nenhuma_mantem_a_linha_sem_sugestao(client):
     assert de_para(client, "103")["metodo"] == "SIMILARIDADE"  # a sugestão por semelhança continua
 
 
-def test_rag_usa_so_associacoes_confirmadas_para_opm_ativa(client, monkeypatch):
-    monkeypatch.setattr(ia, "IA_MIN_EXEMPLOS_RAG", 1)  # banco fictício é pequeno
+def test_rag_usa_so_confirmadas_e_historico_para_opm_ativa(client, consultar):
     mensagens = {}
 
     def tratar(request):
@@ -153,16 +152,25 @@ def test_rag_usa_so_associacoes_confirmadas_para_opm_ativa(client, monkeypatch):
 
     sugerir(client)
 
-    referencia = mensagens["NPM RIO CLARO DO NORTE - 2º BPM"].split("Descrição da unidade", 1)[0]
-    assert "ASSOCIAÇÕES JÁ CONFIRMADAS" in referencia
-    assert '"2ª CIA PM SANTA AURORA - 1º BPM" → "2ª CIA PM - 1º BPM"' in referencia  # confirmada à mão
-    assert "BOA VISTA DO SUL" not in referencia  # 105: confirmada, mas para OPM inativa
-    assert "BPTRAN" not in referencia and "LAGO AZUL" not in referencia  # pendentes não viram exemplo
-    assert "NPM RIO CLARO DO NORTE" not in referencia  # nunca a própria unidade
+    # Permitidos: confirmadas para OPM ativa (nome idêntico ou à mão) + histórico dos veículos (pureza 100%).
+    permitidos = {(r["ds_unidade_legado"], r["nome"]) for r in consultar("""
+        SELECT d.ds_unidade_legado, o.nome FROM tb_de_para_unidade d JOIN tb_opm o ON o.id_opm = d.fk_id_opm
+        WHERE o.status = 'ATIVA' AND (d.situacao = 'CONFIRMADO' OR d.metodo = 'HISTORICO')""")}
+    assert ("2ª CIA PM SANTA AURORA - 1º BPM", "2ª CIA PM - 1º BPM") in permitidos  # confirmada à mão
+    for descricao, conteudo in mensagens.items():
+        referencia = conteudo.split("Descrição da unidade", 1)[0]
+        pares = {tuple(json.loads(lado) for lado in linha[2:].split(" → "))
+                 for linha in referencia.splitlines() if linha.startswith("- ")}
+        assert len(pares) == ia.IA_MAX_EXEMPLOS
+        assert pares <= permitidos  # nada de pendente por semelhança/IA nem de OPM inativa (105)
+        assert descricao not in {d for d, _ in pares}  # nunca a própria unidade
+    nucleo = mensagens["NPM RIO CLARO DO NORTE - 2º BPM"].split("Descrição da unidade", 1)[0]
+    assert '→ "NUCLEO PM - ' in nucleo  # recupera outros núcleos
 
 
-def test_rag_fica_desligado_com_poucas_associacoes_confirmadas(client):
-    # Só 4 associações confirmadas (nome idêntico) < mínimo: exemplos pouco representativos atrapalham.
+def test_rag_fica_desligado_com_poucas_associacoes_confirmadas(client, monkeypatch):
+    # Abaixo do mínimo, exemplos pouco representativos atrapalham: sem RAG.
+    monkeypatch.setattr(ia, "IA_MIN_EXEMPLOS_RAG", 1000)
     mensagens = []
 
     def tratar(request):
@@ -176,6 +184,16 @@ def test_rag_fica_desligado_com_poucas_associacoes_confirmadas(client):
 
     assert len(mensagens) == AGUARDANDO
     assert not any("ASSOCIAÇÕES JÁ CONFIRMADAS" in m for m in mensagens)
+
+
+def test_ia_nao_analisa_unidade_com_sugestao_do_historico(client):
+    falsa = usar_ia(IaFalsa({}))
+
+    sugerir(client)
+
+    assert "NPM AGUA CLARA DO SUL - 3º BPM" not in falsa.candidatas  # 201: o histórico já sugere
+    linha = de_para(client, "201")
+    assert (linha["metodo"], linha["id_opm"], linha["ia_resultado"]) == ("HISTORICO", 12, None)
 
 
 # 2. Entrada inválida / resposta inadequada da IA

@@ -28,7 +28,7 @@ CREATE TABLE tb_de_para_unidade (
     fk_id_opm         INTEGER      REFERENCES tb_opm (id_opm),
     situacao          VARCHAR(20)  NOT NULL
         CHECK (situacao IN ('CONFIRMADO', 'PENDENTE', 'SEM_CORRESPONDENCIA')),
-    metodo            VARCHAR(15)  CHECK (metodo IN ('EXATO', 'SIMILARIDADE', 'IA', 'MANUAL')),
+    metodo            VARCHAR(15)  CHECK (metodo IN ('EXATO', 'HISTORICO', 'SIMILARIDADE', 'IA', 'MANUAL')),
     score             NUMERIC(4, 3),
     observacao        VARCHAR(200),
     confirmado_por    VARCHAR(60),

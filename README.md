@@ -22,7 +22,9 @@ docker compose up -d --build
 | API Cautela (Swagger) | http://localhost:8002/docs |
 | PostgreSQL | `localhost:5433` (usuário/senha/banco: `frota`) |
 
-O banco começa no estado **"antes da correção"**: 20 viaturas ativas só com a coluna antiga.
+O banco começa no estado **"antes da correção"**: 20 viaturas ativas só com a coluna antiga, e 48
+viaturas de 24 unidades **já parcialmente migradas** (as duas colunas preenchidas, como os 6.656 veículos
+assim no banco de desenvolvimento), que formam o histórico usado pelo de-para.
 
 **Dados fictícios, padrões reais.** Cidades e unidades são inventadas, mas os casos reproduzem o que o
 diagnóstico encontrou no banco de desenvolvimento (`evidencias/diagnostico_real_*.md`): OPMs em
@@ -41,6 +43,7 @@ OPM extinta, legado vazio ou inexistente e a divergência entre a coluna antiga 
 | 108 `NPM LAGO AZUL` | 1º PELOTAO PM - LAGO AZUL | sem sugestão (núcleo virou pelotão) |
 | 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL | sem sugestão |
 | 110 `1º ESQ IND POLICIAMENTO MONTADO` | REGIMENTO DE POLICIAMENTO MONTADO | sem sugestão (unidade elevada) |
+| 201 a 224 (ex.: `NPM AGUA CLARA DO SUL - 3º BPM`, `CR 3 - SEDE`, `BPMA`) | a OPM onde já estão as 2 viaturas | **sugestão pelo histórico** |
 
 ## Como a unidade antiga vira OPM
 
@@ -56,6 +59,11 @@ SANTA AURORA").
 3. **Classificação** em `tb_de_para_unidade`, feita **na subida da `logistica-api`** (e de novo pela
    carga e pelo `de_para gerar`) para as unidades antigas que ainda não têm de-para:
    - **CONFIRMADO / EXATO:** nomes iguais após normalizar, com uma única OPM. É o único caso automático.
+   - **PENDENTE / HISTORICO:** as viaturas da unidade que já têm a coluna nova (≥ 2, nunca movimentadas
+     pelo sistema novo) estão em ≥ 80% numa mesma OPM ativa. É a evidência mais forte (no banco de
+     desenvolvimento resolve 133 das 172 viaturas operacionais invisíveis), mas tem ruído real, então é
+     **sugestão**, com a evidência na tela ("2 de 2 viaturas desta unidade já estão nesta OPM"). Se o nome
+     é idêntico mas o histórico discorda, a confirmação automática fica com um aviso.
    - **PENDENTE / SIMILARIDADE:** semelhança ≥ 0,75. Fica como sugestão até alguém confirmar.
    - **SEM_CORRESPONDENCIA:** nada parecido (ex.: a sigla "BPTRAN").
 4. **Validação humana** (aba **Implantação**, etapa 1, que já abre com as sugestões, ou por CSV:
@@ -111,7 +119,9 @@ o legado (RNF02).
 Abra a aba **Implantação**. Enquanto o **Revisor** no topo estiver vazio, um aviso pede o
 preenchimento; clicar numa ação sem ele leva até o campo (sem login no MVP, o nome fica registrado em
 cada decisão). Na tela, o termo técnico "de-para" não aparece: o painel *Associar as unidades antigas às
-OPMs* mostra "7 unidade(s) aguardando decisão":
+OPMs* mostra "31 unidade(s) aguardando decisão":
+- As 24 com **Sugestão pelo histórico** (selo azul, com a evidência) podem ser conferidas e confirmadas
+  de uma vez em **Confirmar sugestões do histórico (24)** (decisão humana em lote, tudo ou nada); restam 7.
 - 103 já vem com a sugestão *2ª CIA PM - 1º BPM* (semelhança): clique em **Confirmar**.
   Esperado: "Viaturas lotadas nela: CDE1F11, CDE2G22".
 - 106 a 110 não têm sugestão por semelhança: use **Sugerir com IA** (abaixo) ou busque a OPM
@@ -131,18 +141,20 @@ confirmadas aparece "sugestão da IA aceita"). Cada chamada fica em `tb_execucao
 o Ollama e clique de novo: a tela avisa "IA indisponível" e as sugestões por semelhança continuam.
 Requer Ollama na máquina (`ollama pull qwen2.5:7b`); a API no Docker o acessa por
 `host.docker.internal:11434` (`OLLAMA_URL`, `OLLAMA_MODELO`, `IA_HABILITADA` no `docker-compose.yml`).
-Resultado observado com `qwen2.5:7b` nos dados fictícios (só 4 associações confirmadas no início: o RAG
-fica desligado e vale o prompt v2, registrado como "qwen2.5:7b (prompt v2)" em cada sugestão), que mostra
-na demo
+Resultado observado com `qwen2.5:7b` e o prompt v6 nos dados fictícios: as 4 associações por nome idêntico
+mais os 24 pares do histórico dão 28 exemplos (≥ 20), então o **RAG fica ligado** e cada sugestão registra
+"qwen2.5:7b (prompt v6)". Mostra na demo
 tanto o ganho quanto o motivo da validação humana:
 
 | Unidade | Sugestão da IA | |
 |---|---|---|
 | 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM (concorda com a semelhança) | ✓ |
-| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO | ✓ |
+| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO (confiança 1,0) | ✓ |
+| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | NUCLEO PM - RIO CLARO DO NORTE (0,9). **Sem o RAG errava** (3ª CIA PM - 2º BPM, a superior) | ✓ |
 | 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL (confiança 1,0) | ✓ |
-| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | 3ª CIA PM - 2º BPM: **errada** (confundiu com a superior) | ✗ o revisor troca para NUCLEO PM - RIO CLARO DO NORTE |
 | 108 `NPM LAGO AZUL` / 110 `1º ESQ IND ...` | "nenhuma corresponde" | o revisor busca e escolhe |
+
+Para mostrar o efeito do RAG ao vivo, suba a API com `IA_VERSAO_PROMPT=v2` e compare a 107.
 
 São os mesmos padrões de erro medidos no banco real (`evidencias/ajuste_prompt_20261105.md`). O
 resultado pode variar com outra versão do modelo; o modelo e a versão do prompt ficam gravados em cada

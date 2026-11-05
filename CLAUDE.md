@@ -144,17 +144,32 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
      do serviço NVIDIA Display Container, reiniciando sozinho); RAM livre ~3 GB é o recurso mais apertado.
    - Suíte: logística 121, avaliação 16.
 
+10. **Histórico dos veículos como camada do de-para** (mesmo dia):
+   - `de_para.historico_por_unidade`: OPM dominante de cada unidade antiga pelas viaturas que já têm as
+     duas colunas (≥ 2, ≥ 80% na mesma OPM ativa, nunca movimentadas pelo sistema novo, fora da OPM 0).
+   - Camadas em `sincronizar_de_para`: nome idêntico (CONFIRMADO) → histórico (PENDENTE, `metodo =
+     'HISTORICO'`, evidência na observação) → semelhança. Histórico **sugere, não confirma** (ruído real:
+     Diretoria de Saúde → Hospital). Nome idêntico com histórico divergente: confirma, mas com aviso.
+   - Confirmação em lote pelo revisor: `POST /api/de-para/historico/confirmar` (tudo ou nada) e botão
+     "Confirmar sugestões do histórico (N)" na etapa 1; selo "Sugestão pelo histórico".
+   - IA não analisa nem sobrescreve linhas HISTORICO. RAG usa confirmadas + histórico com pureza 100%.
+   - Seed: 24 unidades já parcialmente migradas (201–224, OPMs 12–35, viaturas HST0101–HST2402) com os
+     padrões reais; total 72 viaturas. Com 28 exemplos o RAG fica ligado na demo: a 107 passou a ser
+     acertada (NUCLEO PM - RIO CLARO DO NORTE); sem RAG errava para a superior.
+   - Seletor de candidatas com componente de sigla (termo desconhecido comparado letra a letra, bônus
+     se ≥ 0,75): OPM certa entre as 5 candidatas 83,1% → 85,9% (dev), 80,9% → 81,5% (teste); remedição da
+     v6 na teste deu o mesmo resultado (112 acertos, 23 erros, 83,0%).
+   - Suíte: logística 128, cautela 6, avaliação 16.
+
 ## Próximos passos
 
-1. Usar o histórico dos veículos como primeira camada do de-para real (antes do nome e da IA) e como
-   fonte de exemplos do RAG (~265 pares no banco de desenvolvimento).
+1. Erros que restam na demo: 108 (núcleo que virou pelotão) e 110 (unidade elevada) — ver se mais exemplos
+   desses padrões no banco resolvem.
 2. Testar `qwen3:8b` (cabe nos 6 GB da RTX 3060) com `--modelo`, na mesma partição teste. Opcional:
    seletor de candidatas por embeddings locais — a OPM certa está entre as 5 candidatas em ~81% dos casos.
-3. Erros que restam na demo (107 confundida com a superior, 108 núcleo→pelotão, 110 unidade elevada):
-   ver se melhoram com o RAG quando houver ≥ 20 confirmadas.
-4. Revisar à mão uma amostra dos erros do híbrido (separar erro do método × ruído do gabarito).
-5. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
-6. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
+3. Revisar à mão uma amostra dos erros do híbrido (separar erro do método × ruído do gabarito).
+4. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
+5. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
    Fine-tuning e MCP foram avaliados e descartados por ora (poucos pares e ruidosos; MCP não melhora a
    qualidade da sugestão).
 

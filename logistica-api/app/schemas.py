@@ -61,6 +61,12 @@ class DeParaOut(BaseModel):
     dt_ia: datetime | None = None
 
 
+class ConfirmacaoHistoricoOut(BaseModel):
+    confirmadas: list[str]
+    movidas: list[str]
+    bloqueadas: list["BloqueioOut"]
+
+
 class SugestaoIaIn(BaseModel):
     usuario: str = Field(min_length=3, max_length=60)
 

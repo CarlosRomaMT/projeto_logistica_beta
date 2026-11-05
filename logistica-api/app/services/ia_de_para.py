@@ -241,11 +241,17 @@ class SeletorCandidatas:
         alvo = set(tokens(descricao))
         peso_alvo = sum(self._idf.get(t, self._idf_padrao) for t in alvo) or 1.0
         texto_alvo = " ".join(sorted(alvo))
+        # Siglas: termo da descrição que nenhuma OPM tem (ex.: "bptran") comparado letra a letra com os
+        # termos de cada OPM ("bpmtran"). Sem isso, a sigla não tem nada em comum e a OPM certa fica de fora.
+        desconhecidos = [t for t in alvo if t not in self._idf and len(t) >= 4 and not t.isdigit()]
         pontuadas = []
         for opm, termos in zip(self.opms, self._termos):
             comum = sum(self._idf.get(t, self._idf_padrao) for t in alvo & termos) / peso_alvo
             texto = SequenceMatcher(None, texto_alvo, " ".join(sorted(termos))).ratio()
-            pontuadas.append((0.75 * comum + 0.25 * texto, opm.id_opm, opm))
+            sigla = max((SequenceMatcher(None, t, u).ratio() for t in desconhecidos for u in termos if len(u) >= 4),
+                        default=0.0)
+            bonus = 0.3 * sigla if sigla >= 0.75 else 0.0
+            pontuadas.append((0.75 * comum + 0.25 * texto + bonus, opm.id_opm, opm))
         pontuadas.sort(key=lambda p: (-p[0], p[1]))
         return [opm for _, _, opm in pontuadas[:limite]]
 
