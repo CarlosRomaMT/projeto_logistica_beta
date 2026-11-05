@@ -47,6 +47,8 @@ export interface DeParaRevisao {
   ia_justificativa: string | null
   ia_modelo: string | null
   ia_alerta: string | null
+  // Outras opções quando há dúvida (sem sugestão ou com alerta), na ordem do seletor.
+  ia_alternativas: { id_opm: number; nome: string }[] | null
 }
 
 export interface StatusIa {

@@ -76,6 +76,10 @@ def avaliar(gabarito: list[dict], opms: list[dict], cliente: "ia.ClienteOllama |
             r = cliente.sugerir(descricao, candidatas, exemplos)
             linha["ia_alerta"] = bool(r.resultado == ia.ACEITA and r.id_opm is not None and
                                       seletor.alerta_de_coerencia(descricao, r.id_opm, candidatas))
+            alternativas = ia.alternativas_para_revisor(r.id_opm, r.resultado == ia.ACEITA, linha["ia_alerta"],
+                                                        candidatas)
+            linha["opcoes_mostradas"] = " ".join(
+                str(i) for i in ([r.id_opm] if r.resultado == ia.ACEITA else []) + alternativas)
             linha.update({"ia_resultado": r.resultado, "ia_motivo": r.motivo, "ia_id": r.id_opm,
                           "ia_confianca": r.confianca, "ia_justificativa": r.justificativa,
                           "ia_latencia_ms": r.latencia_ms})
@@ -128,6 +132,9 @@ def gerar_markdown(m: dict, meta: dict) -> str:
               f"- OPM correta entre as candidatas enviadas: **{_pct(q['gabarito_nas_candidatas'])}** "
               "(teto da IA: se a certa não foi enviada, não há como acertar)",
               f"- Acurácia do Qwen quando a OPM correta foi enviada: **{_pct(q['acuracia_quando_gabarito_enviado'])}**",
+              *([f"- Top 3 na dúvida (sem sugestão ou com alerta): {q['linhas_com_alternativas']} linhas com "
+                 f"alternativas; OPM certa entre as opções mostradas: **{_pct(q['certa_entre_opcoes_mostradas'])}**"]
+                if "certa_entre_opcoes_mostradas" in q else []),
               *([f"- Alerta de coerência (determinístico): em {q['alertas_em_erros'] + q['alertas_em_acertos']} "
                  f"sugestões aceitas, {q['alertas_em_erros']} erradas e {q['alertas_em_acertos']} certas"]
                 if "alertas_em_erros" in q else []),

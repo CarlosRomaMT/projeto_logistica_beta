@@ -33,7 +33,27 @@ const opmInativa = (d: DeParaRevisao) => d.situacao === 'CONFIRMADO' && d.status
 const pct = (x: number) => `${Math.round(x * 100)}%`
 
 /** O que a IA disse sobre a unidade, para o revisor decidir (a IA nunca confirma sozinha). */
-function ParecerIa({ d }: { d: DeParaRevisao }) {
+function OutrasOpcoes({ d, onEscolher }: { d: DeParaRevisao; onEscolher: (opm: Opm) => void }) {
+  if (!d.ia_alternativas?.length) return null
+  return (
+    <div className="opcoes-ia">
+      <span className="suave">Outras opções:</span>
+      {d.ia_alternativas.map((o) => (
+        <button
+          key={o.id_opm}
+          type="button"
+          className="secundario"
+          title="Preenche a OPM correta; confira e clique em Confirmar"
+          onClick={() => onEscolher({ id_opm: o.id_opm, nome: o.nome, status: 'ATIVA' })}
+        >
+          {o.nome}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function ParecerIa({ d, onEscolher }: { d: DeParaRevisao; onEscolher: (opm: Opm) => void }) {
   if (d.situacao === 'CONFIRMADO' || !d.ia_resultado) return null
   if (d.metodo === 'IA') {
     return (
@@ -47,6 +67,7 @@ function ParecerIa({ d }: { d: DeParaRevisao }) {
             ⚠ {d.ia_alerta}
           </div>
         )}
+        <OutrasOpcoes d={d} onEscolher={onEscolher} />
       </>
     )
   }
@@ -60,6 +81,7 @@ function ParecerIa({ d }: { d: DeParaRevisao }) {
       {d.ia_resultado !== 'DESCARTADA' && d.ia_justificativa && (
         <div className="suave justificativa-ia">“{d.ia_justificativa}”</div>
       )}
+      <OutrasOpcoes d={d} onEscolher={onEscolher} />
     </>
   )
 }
@@ -256,7 +278,10 @@ export function ValidacaoDePara({ revisor, pedirRevisor, sinalRecarga, onAlterad
                     {d.situacao === 'PENDENTE' && d.metodo === 'SIMILARIDADE' && d.score !== null && (
                       <div className="suave">semelhança {pct(d.score)}</div>
                     )}
-                    <ParecerIa d={d} />
+                    <ParecerIa
+                      d={d}
+                      onEscolher={(opm) => setEscolhas((e) => ({ ...e, [d.cd_unidade_legado]: opm }))}
+                    />
                     {opmInativa(d) && <div className="suave">associada a {d.nome_opm}</div>}
                     {emEdicao && <div className="suave">hoje: {d.nome_opm}</div>}
                     {d.observacao && <div className="suave">{d.observacao}</div>}

@@ -178,4 +178,6 @@ input[type='checkbox'] { width: auto; }
 .faixa-ia { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
 .faixa-ia .suave { flex: 1 1 260px; }
 .justificativa-ia { font-style: italic; }
+.opcoes-ia { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-top: 4px; }
+.opcoes-ia button { padding: 2px 8px; font-size: 0.75rem; }
 .alerta-ia { margin-top: 4px; padding: 4px 6px; border-radius: 4px; font-size: 0.78rem; background: #fff4e0; color: #8a5300; border: 1px solid #f0dca8; }

@@ -42,6 +42,8 @@ CREATE TABLE tb_de_para_unidade (
     ia_modelo         VARCHAR(60),
     -- Verificação determinística da sugestão (ex.: a cidade da descrição está em outra candidata).
     ia_alerta         VARCHAR(300),
+    -- Opções extras para o revisor quando há dúvida (sem sugestão ou com alerta), na ordem do seletor.
+    ia_alternativas   INTEGER[],
     dt_ia             TIMESTAMPTZ
 );
 

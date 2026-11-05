@@ -92,6 +92,15 @@ def calcular(linhas: list[dict], ia_executada: bool = True) -> dict:
         resultado[QWEN]["alertas_em_acertos"] = sum(
             1 for linha in aceitas if linha.get("ia_alerta") and linha["ia_id"] == linha["gabarito"])
 
+    # Top 3 na dúvida: a OPM certa está entre as opções mostradas ao revisor?
+    if any("opcoes_mostradas" in linha for linha in linhas):
+        def mostradas(linha):
+            return {int(i) for i in str(linha.get("opcoes_mostradas") or "").split()}
+        resultado[QWEN]["certa_entre_opcoes_mostradas"] = round(
+            sum(1 for linha in linhas if int(linha["gabarito"]) in mostradas(linha)) / len(linhas), 3) if linhas else 0.0
+        resultado[QWEN]["linhas_com_alternativas"] = sum(
+            1 for linha in linhas if len(mostradas(linha)) > (1 if linha["ia_resultado"] == "ACEITA" else 0))
+
     # Onde a IA agrega: casos que a regra atual não acertava.
     regra_errava = [i for i, linha in enumerate(linhas) if regra[i] != linha["gabarito"]]
     resultado["ganho_do_hibrido"] = {

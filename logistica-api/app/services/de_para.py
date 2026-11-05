@@ -293,6 +293,9 @@ SQL_DE_PARA = """
            d.confirmado_por, d.dt_confirmacao, o.status AS status_opm,
            d.ia_resultado, d.ia_id_opm, oi.nome AS ia_nome_opm, d.ia_confianca, d.ia_justificativa,
            d.ia_modelo, d.dt_ia, d.ia_alerta,
+           (SELECT json_agg(json_build_object('id_opm', oa.id_opm, 'nome', oa.nome)
+                            ORDER BY array_position(d.ia_alternativas, oa.id_opm))
+            FROM tb_opm oa WHERE oa.id_opm = ANY(d.ia_alternativas)) AS ia_alternativas,
            (SELECT count(*) FROM tb_viatura v
             WHERE v.cd_unidade_legado = d.cd_unidade_legado
               AND v.status_operacional <> 'BAIXADA'

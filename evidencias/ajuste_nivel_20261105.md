@@ -68,6 +68,20 @@ Descartar troca acertos por precisão; o alerta mantém os acertos e aponta ao r
 perigosos (sugestão errada com justificativa convincente). Na demo: alerta útil no 107 e falso alarme no
 103 (a cidade da companhia aparece no nome do batalhão) — o revisor confere e mantém.
 
+## Top 3 só na dúvida (sugestão do usuário)
+
+Quando a IA não sugere ou a sugestão vem com alerta, o revisor vê também as próximas candidatas do seletor
+(até 3 opções no total). Aplicado às respostas gravadas da v8 com a mesma função do sistema:
+
+| OPM certa na tela | Dev (71) | Teste (157) | Linhas com alternativas (teste) |
+|---|---:|---:|---:|
+| Só a sugestão da IA | 69,0% | 72,6% | 0 |
+| **Top 3 só na dúvida (adotado)** | **81,7%** | **77,7%** | **24** |
+| Top 3 em todas as linhas | 85,9% | 79,6% | 157 |
+
+"Estar na tela" não é o mesmo que o revisor escolher a certa — isso só se mede com uso real. Demo: a OPM
+certa da 107 e da 110 aparece como primeira das outras opções.
+
 ## Limitação do gabarito (registrada em 05/11/2026)
 
 Os pares "unidade antiga → OPM" das viaturas já preenchidas foram feitos por **scripts antigos de

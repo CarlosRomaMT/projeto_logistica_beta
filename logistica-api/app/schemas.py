@@ -38,6 +38,11 @@ class MovimentacaoIn(BaseModel):
     usuario: str = "demo.logistica"
 
 
+class OpcaoOpmOut(BaseModel):
+    id_opm: int
+    nome: str
+
+
 class DeParaOut(BaseModel):
     cd_unidade_legado: str
     ds_unidade_legado: str
@@ -60,6 +65,7 @@ class DeParaOut(BaseModel):
     ia_modelo: str | None = None
     dt_ia: datetime | None = None
     ia_alerta: str | None = None
+    ia_alternativas: list[OpcaoOpmOut] | None = None
 
 
 class SugestaoIaIn(BaseModel):

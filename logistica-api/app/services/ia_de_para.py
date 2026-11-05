@@ -367,6 +367,24 @@ class SeletorCandidatas:
         return [opm for _, _, opm in pontuadas[:limite]]
 
 
+# --- Opções para o revisor quando há dúvida ---
+
+OPCOES_NA_DUVIDA = 3
+
+
+def alternativas_para_revisor(id_sugerida: int | None, aceita: bool, com_alerta: bool,
+                              candidatas: list[Candidata], total: int = OPCOES_NA_DUVIDA) -> list[int]:
+    """Top 3 só quando há dúvida: a IA não sugeriu (ou com confiança baixa) ou a sugestão veio com alerta.
+
+    As alternativas são as próximas candidatas do seletor (determinístico), sem a sugerida. Com sugestão
+    aceita, completam 3 opções junto com ela; sem sugestão, são as 3. Fora da dúvida, nenhuma.
+    """
+    if aceita and not com_alerta:
+        return []
+    quantidade = total - 1 if aceita else total
+    return [c.id_opm for c in candidatas if c.id_opm != id_sugerida][:quantidade]
+
+
 # --- Montagem da pergunta e validação da resposta ---
 
 

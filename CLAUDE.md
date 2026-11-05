@@ -193,6 +193,17 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
     5 erros e 4 acertos. Demo: alerta útil no 107, falso alarme no 103. Métricas `alertas_em_erros` /
     `alertas_em_acertos` no comparativo. Suíte: logística 128, avaliação 17.
 
+14. **Top 3 só na dúvida** (sugestão do usuário): `ia_de_para.alternativas_para_revisor` — sem sugestão
+    (ou confiança baixa) ou com alerta, grava em `tb_de_para_unidade.ia_alternativas` as próximas candidatas
+    do seletor (até 3 opções com a sugestão); tela mostra "Outras opções" (clique preenche a OPM; revisor
+    confirma). Teste: OPM certa na tela 72,6% → 77,7% com alternativas em 24 de 157 linhas (top 3 sempre:
+    79,6%). Demo: 107 e 110 resolvidas pela 1ª opção. Comparativo: `certa_entre_opcoes_mostradas`.
+    Suíte: logística 133, avaliação 18.
+15. **Seed sem a GHI3P33** (pedido do usuário): viatura cautelada com código de unidade inexistente e sem
+    OPM não é cenário realista. O teste "etapa 4 lota viatura cautelada, operação continua bloqueando"
+    monta o próprio cenário (GHI1N11 cautelada na OPM 0). Agora: 18 viaturas ativas sem OPM; carga = 7
+    lotadas, 4 na OPM 0, 1 divergência.
+
 ## Próximos passos
 
 1. 107 (núcleo citando a superior) e 110 (esquadrão elevado a regimento) sem RAG na demo: só se resolvem

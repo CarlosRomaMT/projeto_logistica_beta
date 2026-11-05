@@ -57,14 +57,16 @@ def _observacao(alvo: dict, r: ia.RespostaIA) -> str | None:
 
 
 def gravar_resultado(conn: Connection, alvo: dict, r: ia.RespostaIA, modelo: str,
-                     alerta: str | None = None) -> bool:
+                     alerta: str | None = None, alternativas: list[int] | None = None) -> bool:
     """Grava a análise da IA na linha do de-para. Devolve False se a linha já foi decidida."""
     params = {"cd": alvo["cd_unidade_legado"], "aguardando": list(AGUARDANDO), "resultado": r.resultado,
               "ia_opm": r.id_opm if r.resultado in (ia.ACEITA, ia.BAIXA_CONFIANCA) else None,
               "confianca": r.confianca, "modelo": modelo, "alerta": alerta,
+              "alternativas": alternativas or None,
               "justificativa": r.justificativa if r.resultado != ia.DESCARTADA else f"Resposta descartada: {r.motivo}"}
     campos_ia = """ia_resultado = :resultado, ia_id_opm = :ia_opm, ia_confianca = :confianca,
                    ia_justificativa = :justificativa, ia_modelo = :modelo, ia_alerta = :alerta,
+                   ia_alternativas = :alternativas,
                    dt_ia = now(), dt_atualizacao = now()"""
     if r.resultado == ia.ACEITA:
         sql = f"""UPDATE tb_de_para_unidade
@@ -158,9 +160,10 @@ def sugerir_com_ia(cliente: ia.ClienteOllama, usuario: str) -> dict:
                   if r.resultado in (ia.ACEITA, ia.BAIXA_CONFIANCA) and r.id_opm is not None else None)
         if alerta:
             cont["alertas"] += 1
+        alternativas = ia.alternativas_para_revisor(r.id_opm, r.resultado == ia.ACEITA, bool(alerta), candidatas)
         with engine.begin() as conn:
             registrar_execucao(conn, alvo["cd_unidade_legado"], usada, r, usuario)
-            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, usada, alerta):
+            if r.resultado not in FALHAS and not gravar_resultado(conn, alvo, r, usada, alerta, alternativas):
                 cont["ja_decididas"] += 1  # o revisor confirmou enquanto a IA pensava: decisão humana vale
 
     logger.info("IA no de-para por %s: %s", usuario, dict(cont))

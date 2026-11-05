@@ -82,6 +82,15 @@ def test_metricas_do_alerta_de_coerencia():
     assert (m[QWEN]["alertas_em_erros"], m[QWEN]["alertas_em_acertos"]) == (1, 1)
 
 
+def test_metricas_do_top3_na_duvida():
+    linhas = [dict(linha(1, "SEM_CORRESPONDENCIA", None, ia_id=1), opcoes_mostradas="1"),        # sem dúvida
+              dict(linha(2, "SEM_CORRESPONDENCIA", None, ia_id=9), opcoes_mostradas="9 2 5"),    # alerta: certa entre as 3
+              dict(linha(3, "SEM_CORRESPONDENCIA", None, ia_resultado="SEM_CORRESPONDENCIA"),
+                   opcoes_mostradas="4 5 6")]                                                # sem sugestão: não estava
+    m = calcular(linhas)
+    assert (m[QWEN]["certa_entre_opcoes_mostradas"], m[QWEN]["linhas_com_alternativas"]) == (0.667, 2)
+
+
 def test_metricas_sem_ia():
     m = calcular([linha(1, "CONFIRMADO", 1)], ia_executada=False)
     assert QWEN not in m and m[REGRA]["acuracia"] == 1.0

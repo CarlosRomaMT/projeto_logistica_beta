@@ -207,6 +207,20 @@ def test_sugestao_incoerente_ganha_alerta_mas_continua_para_o_revisor(client):
     assert de_para(client, "106")["ia_alerta"] is None  # sugestão coerente: sem alerta
 
 
+def test_top3_so_quando_ha_duvida(client):
+    usar_ia(IaFalsa({"NPM RIO CLARO DO NORTE - 2º BPM": aceita(10, justificativa="Mesma localidade."),
+                     "BPTRAN": aceita(6)}))  # as demais: "nenhuma corresponde"
+
+    sugerir(client)
+
+    com_alerta = de_para(client, "107")["ia_alternativas"]
+    assert [o["id_opm"] for o in com_alerta][:1] == [7] and len(com_alerta) == 2  # sugestão + 2 opções
+    assert com_alerta[0]["nome"] == "NUCLEO PM - RIO CLARO DO NORTE"
+    sem_sugestao = de_para(client, "110")["ia_alternativas"]
+    assert len(sem_sugestao) == 3 and sem_sugestao[0]["id_opm"] == 11  # o Regimento aparece como opção
+    assert de_para(client, "106")["ia_alternativas"] is None  # sugestão coerente: sem alternativas
+
+
 # 2. Entrada inválida / resposta inadequada da IA
 
 

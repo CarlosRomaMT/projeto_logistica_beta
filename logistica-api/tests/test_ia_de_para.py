@@ -258,6 +258,21 @@ def test_sem_alerta_quando_a_escolha_tem_a_cidade_ou_ninguem_tem():
     assert seletor.alerta_de_coerencia("2º BPM", 10, seletor.selecionar("2º BPM")) is None
 
 
+# Top 3 para o revisor quando há dúvida
+
+CINCO = [Candidata(i, f"OPM {i}") for i in (7, 15, 3, 10, 25)]  # na ordem do seletor
+
+
+@pytest.mark.parametrize("sugerida, aceita, alerta, esperado", [
+    (10, True, False, []),            # sugestão sem alerta: só ela
+    (10, True, True, [7, 15]),        # sugestão com alerta: ela + 2 alternativas
+    (None, False, False, [7, 15, 3]),  # sem sugestão: as 3 primeiras
+    (7, False, False, [15, 3, 10]),   # confiança baixa ("talvez 7"): 3 outras opções
+])
+def test_alternativas_so_quando_ha_duvida(sugerida, aceita, alerta, esperado):
+    assert ia.alternativas_para_revisor(sugerida, aceita, alerta, CINCO) == esperado
+
+
 # Seleção de candidatas (determinística)
 
 

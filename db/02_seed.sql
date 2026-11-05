@@ -50,7 +50,6 @@ INSERT INTO tb_viatura (placa, modelo, status_operacional, cd_unidade_legado, fk
     ('FGH3M33', 'Chevrolet Spin',    'MANUTENCAO', NULL,  NULL),
     -- Código inexistente no cadastro antigo (UPM órfã): contingência.
     ('GHI1N11', 'Ford Ranger',       'DISPONIVEL', '999', NULL),
-    ('GHI3P33', 'Toyota Hilux',      'CAUTELADA',  '000', NULL),
     -- Sem correspondência por semelhança (alvo da IA): contingência até alguém decidir.
     ('GHI2O22', 'Mitsubishi L200',   'DISPONIVEL', '106', NULL),
     ('KLM1A11', 'Toyota Hilux',      'DISPONIVEL', '107', NULL),

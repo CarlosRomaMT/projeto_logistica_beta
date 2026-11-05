@@ -22,7 +22,7 @@ docker compose up -d --build
 | API Cautela (Swagger) | http://localhost:8002/docs |
 | PostgreSQL | `localhost:5433` (usuário/senha/banco: `frota`) |
 
-O banco começa no estado **"antes da correção"**: 19 viaturas ativas só com a coluna antiga.
+O banco começa no estado **"antes da correção"**: 18 viaturas ativas só com a coluna antiga.
 
 **Dados fictícios, padrões reais.** Cidades e unidades são inventadas, mas os casos reproduzem o que o
 diagnóstico encontrou no banco de desenvolvimento (`evidencias/diagnostico_real_*.md`): OPMs em
@@ -102,7 +102,7 @@ lotação → correção das divergências → lotar as viaturas que ficaram na 
 `logistica-api` cria as sugestões ao subir.
 
 ### 1. Mostrar o problema
-Abra http://localhost:5173. Na Logística, 21 viaturas (19 ativas e 2 baixadas) aparecem como
+Abra http://localhost:5173. Na Logística, 20 viaturas (18 ativas e 2 baixadas) aparecem como
 *"Sem unidade: invisível no Cautela"*. No Cautela, o `p4.opm2` não vê nenhuma viatura.
 
 Marque **"Demonstração: mostrar unidade do cadastro antigo"** para ver, ao lado de cada viatura, a
@@ -137,14 +137,17 @@ Resultado observado com `qwen2.5:7b` e o prompt padrão `v8` nos dados fictício
 associações confirmadas (< 20), então o RAG fica desligado e vale a `v8s`, registrada em cada sugestão
 como "qwen2.5:7b (prompt v8s)". Mostra na demo tanto o ganho quanto o motivo da validação humana:
 
-| Unidade | Sugestão da IA | Alerta de coerência | |
+| Unidade | Sugestão da IA | Alerta de coerência | Outras opções (só na dúvida) |
 |---|---|---|---|
-| 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM (concorda com a semelhança) | ⚠ "AURORA" está no 1º BPM (falso alarme) | ✓ o revisor confere e mantém |
-| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO | — | ✓ |
-| 108 `NPM LAGO AZUL` | 1º PELOTAO PM - LAGO AZUL (**subida de nível**: núcleo virou pelotão) | — | ✓ |
-| 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL | — | ✓ |
-| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | 3ª CIA PM - 2º BPM: **errada** (confundiu com a superior; a justificativa do modelo, "mesma localidade", é falsa) | ⚠ "RIO CLARO" está no NUCLEO PM - RIO CLARO DO NORTE | ✗ o revisor troca |
-| 110 `1º ESQ IND POLICIAMENTO MONTADO` | "nenhuma corresponde" | — | o revisor busca "Montado" e escolhe o Regimento |
+| 103 `2ª CIA PM SANTA AURORA - 1º BPM` | 2ª CIA PM - 1º BPM ✓ (concorda com a semelhança) | ⚠ "AURORA" está no 1º BPM (falso alarme) | 1º BPM - Santa Aurora, 1º PEL - Santa Luzia |
+| 106 `BPTRAN` | BATALHAO DE POLICIA MILITAR DE TRANSITO ✓ | — | — |
+| 108 `NPM LAGO AZUL` | 1º PELOTAO PM - LAGO AZUL ✓ (**subida de nível**) | — | — |
+| 109 `CR 12 - SEDE` | 12º COMANDO REGIONAL ✓ | — | — |
+| 107 `NPM RIO CLARO DO NORTE - 2º BPM` | 3ª CIA PM - 2º BPM ✗ (confundiu com a superior; a justificativa "mesma localidade" é falsa) | ⚠ "RIO CLARO" está no NUCLEO PM - RIO CLARO DO NORTE | **NUCLEO PM - RIO CLARO DO NORTE** ✓, NUCLEO PM - Ponte Alta |
+| 110 `1º ESQ IND POLICIAMENTO MONTADO` | "nenhuma corresponde" | — | **REGIMENTO DE POLICIAMENTO MONTADO** ✓, 1º BPM, 1ª CIPM |
+
+As 6 se resolvem com um clique: a sugestão certa ou a primeira das "Outras opções" (o clique preenche a
+OPM; o revisor confere e confirma).
 
 **Alerta de coerência** (determinístico, `SeletorCandidatas.alerta_de_coerencia`): se os termos distintivos
 da descrição (raros no cadastro, como o nome da cidade; palavras de tipo como NPM/CIA/BPM não contam) não
@@ -152,6 +155,12 @@ aparecem na OPM sugerida mas aparecem em outra candidata, a linha mostra "⚠ Ve
 do modelo não é prova (no 107 ele afirma "mesma localidade" sem ser). O alerta **não descarta**: nos dados
 reais, descartar barrava tantos acertos quanto erros; avisando, sinaliza 5 dos 28 erros da partição teste
 com 4 falsos alarmes em 142 sugestões.
+
+**Top 3 só na dúvida** (`ia_de_para.alternativas_para_revisor`): quando a IA não sugere (ou com confiança
+baixa) ou a sugestão vem com alerta, a linha mostra "Outras opções" — as próximas candidatas do seletor
+(determinístico, sem chamada extra ao modelo), completando 3 opções. Nos dados reais (partição teste),
+a OPM certa passa a estar na tela em **77,7%** dos casos (72,6% só com a sugestão), com alternativas em
+só 24 de 157 linhas; top 3 em todas as linhas daria 79,6% com muito mais ruído.
 
 Com o RAG ligado (≥ 20 pares de exemplo, como no banco real, onde há ~265 pares das viaturas já
 preenchidas), as 6 saem certas (`scripts/diagnostico_ia.py`, `evidencias/ajuste_nivel_20261105.md`).
@@ -166,7 +175,7 @@ OPM, Confirmar avisa "Escolha a OPM correta da unidade … antes de confirmar".
 
 Cada viatura lotada passa pelo serviço de movimentação (validação do RF03, histórico com tipo
 `CORRECAO_DE_PARA`). Na implantação, viatura cautelada também é lotada. OPM inativa é recusada com a
-mensagem oficial. Confirmando 103 e 106 a 110, a etapa 2 cai de 19 para 12 viaturas aguardando.
+mensagem oficial. Confirmando 103 e 106 a 110, a etapa 2 cai de 18 para 11 viaturas aguardando.
 
 **Alternativa por CSV** (revisão em massa no Excel, passos 2a e 2b):
 
@@ -196,7 +205,7 @@ nada: com uma OPM inexistente ou inativa, nada é gravado. Decisões manuais nun
 novo `gerar`.
 
 ### 3. Etapa 2: carga da lotação
-No painel *Carga da lotação* ("12 viatura(s) aguardando"), clique em **Simular**: aparecem os números e
+No painel *Carga da lotação* ("11 viatura(s) aguardando"), clique em **Simular**: aparecem os números e
 a lista de inconformidades, sem gravar nada. Depois clique em **Executar carga** (o botão só libera após
 a simulação, e a tela avisa isso; sem revisor, o clique leva até o campo). Aplica nas viaturas **só** o de-para confirmado; o resto vai
 para a OPM 0.
@@ -205,18 +214,18 @@ Pelo terminal: `docker compose exec -T logistica-api python -m scripts.migrar_op
 depois `... migrar_opm_legado --usuario sgt.revisor`.
 
 Esperado: o resumo separa **7 lotadas na OPM correta** (listadas por placa e OPM,
-inclusive a BCD2E22, cautelada), **5 na OPM 0** e **1 divergência** (as 6 que precisam de atenção aparecem
+inclusive a BCD2E22, cautelada), **4 na OPM 0** e **1 divergência** (as 5 que precisam de atenção aparecem
 com o motivo), e o link
 **Baixar relatório das que precisam de atenção (CSV)** (`relatorios/inconformidades_<data>.csv`, com a coluna
 `executado_por`). As outras telas recarregam sozinhas:
 - nenhuma viatura ativa fica sem OPM; a `ABC1A23` aparece para o `p4.opm1`, a `CDE1F11` para o `p4.opm3`;
   a `GHI2O22` vai para o Batalhão de Trânsito, que não tem P4 cadastrado nos dados fictícios;
-- as 5 sem associação utilizável (legado vazio, código inexistente) ficam na
+- as 4 sem associação utilizável (legado vazio, código inexistente) ficam na
   *OPM 0 - Sem ligação* (visíveis para `p4.contingencia`) e são resolvidas na etapa 4;
 - a `JKL1S11`, cujo legado diverge da coluna nova, não é alterada: vira **1 proposta de correção**
   (etapa 3).
 
-Se a carga rodar antes da etapa 1, 12 viaturas vão para a OPM 0; confirmar o de-para depois as tira de
+Se a carga rodar antes da etapa 1, 11 viaturas vão para a OPM 0; confirmar o de-para depois as tira de
 lá na hora, sem rodar a carga de novo. O resultado da carga é um retrato daquele momento ("gravada às
 HH:MM"); o que falta resolver aparece nas etapas 3 e 4, que se atualizam sozinhas.
 
