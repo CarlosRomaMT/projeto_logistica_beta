@@ -1,0 +1,23 @@
+﻿============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-8.3.4, pluggy-1.7.0 -- /usr/local/bin/python3.12
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.16.0
+collecting ... collected 6 items
+
+tests/test_visibilidade.py::test_p4_ve_apenas_a_propria_opm_pela_coluna_nova PASSED [ 16%]
+tests/test_visibilidade.py::test_somente_status_disponivel_aparece PASSED [ 33%]
+tests/test_visibilidade.py::test_movimentacao_reflete_na_proxima_leitura PASSED [ 50%]
+tests/test_visibilidade.py::test_contingencia_so_aparece_para_p4_da_opm_0 PASSED [ 66%]
+tests/test_visibilidade.py::test_p4_nao_identificado PASSED              [ 83%]
+tests/test_visibilidade.py::test_resposta_nao_e_cacheada PASSED          [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/starlette/testclient.py:40
+  /usr/local/lib/python3.12/site-packages/starlette/testclient.py:40: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = typing.Callable[[], typing.ContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 6 passed, 1 warning in 1.55s =========================

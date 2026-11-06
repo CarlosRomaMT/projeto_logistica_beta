@@ -1,6 +1,7 @@
 # Lotação de viaturas com IA local — documentação da apresentação
 
 **Curso:** IA Avançada para Infraestrutura, Dados e Desenvolvimento de TI (SESP-MT) · **Projeto final (MVP)**
+**Equipe:** Fernando Zanette Costa Marques e João Carlos de Roma da Silva
 **Repositório:** este projeto · **Execução:** ver [`README.md`](../README.md) · **Histórico e decisões:** [`CLAUDE.md`](../CLAUDE.md)
 
 Este documento segue os 10 requisitos obrigatórios e o roteiro mínimo de demonstração do curso. Todos
@@ -103,7 +104,7 @@ flowchart TD
 | Decisão | Motivo |
 |---|---|
 | Corrigir a aplicação (ponto único de escrita), não trigger nem view | Resolve na origem, valida a OPM e mantém histórico (alternativas no README) |
-| **Modelo local** (Qwen via Ollama), não serviço externo | Nomes de unidades são dados institucionais: não saem da máquina; sem chave de API |
+| **Modelo local** (Qwen via Ollama), não serviço externo | A avaliação usa dados do banco institucional (lotação real das viaturas), que não podem ir para ferramentas externas; sem chave de API nem custo por chamada |
 | A IA só **sugere**; só nome idêntico é automático | Erros reais de 20–30% exigem decisão humana; ação de impacto (lotar viatura) passa pelo revisor |
 | Sem camada "histórico das viaturas" | No banco real, as viaturas já preenchidas vieram de scripts antigos de equiparação por descrição: não são evidência independente. Servem só como exemplos do RAG |
 | Fine-tuning e MCP descartados | Poucos pares e com ruído para treinar; MCP não melhora a qualidade da sugestão |
@@ -128,7 +129,8 @@ pelotão; esquadrão que virou regimento) e grafias livres.
 **Por que IA.** Sem chave entre os cadastros e com nomes muito variados, a regra fixa (normalização +
 semelhança de texto) acerta **19,7%** nos dados reais. Um modelo de linguagem entende abreviações e
 contexto ("NPM" = núcleo; o número depois do hífen é a superior), e o modelo **local** atende à regra de
-não expor dados institucionais.
+não expor informações institucionais em ferramentas externas: os pares reais (unidade antiga → OPM das
+viaturas) usados na avaliação nunca saem da máquina.
 
 **O que é determinístico e o que é IA**
 
@@ -198,16 +200,19 @@ banco (visibilidade imediata); a Logística chama o Ollama por HTTP (`/api/tags`
 | **Resposta inadequada da IA** | `test_sugestao_incoerente_ganha_alerta_mas_continua_para_o_revisor` | 107: sugestão errada com alerta + opção certa |
 
 **Totais:** 133 testes na Logística, 6 no Cautela, 18 na avaliação (sem banco/Ollama reais: IA
-simulada), mais o teste e2e de latência. Evidências com dados reais em `evidencias/` (só agregados).
+simulada), mais o teste e2e de latência. Saída das execuções em `evidencias/testes_*.txt`; evidências com dados reais
+em `evidencias/` (só agregados), com índice em [`evidencias/README.md`](../evidencias/README.md).
 
 ---
 
 ## 7. Segurança e privacidade (requisito 07)
 
-- **Dados:** demo 100% fictícia. O banco de desenvolvimento é lido em modo **somente leitura**, com
+- **Dados:** demo 100% fictícia (viaturas, placas, lotações e cidades); nomes de unidades citados como
+  exemplo são públicos (organograma da instituição). O banco de desenvolvimento é lido em modo **somente leitura**, com
   bloqueio, antes de executar, de qualquer consulta a coluna protegida (placa, chassi, RENAVAM, valor,
   observações, contatos, localização, `log_*`) ou `SELECT *` — testado.
-- **Nomes reais de unidades** ficam em `dados_reais/` (fora do git) e só vão ao **modelo local**.
+- **Pares reais da avaliação** (unidade antiga → OPM das viaturas) ficam em `dados_reais/` (fora do git) e
+  só vão ao **modelo local**.
 - **Sem credenciais no código:** conexão por `DIAG_DATABASE_URL` ou `.env` externo; senhas do compose são
   fictícias e locais.
 - **Limites de uso:** 5 candidatas e 5 exemplos por chamada, timeout, disjuntor após 3 falhas,
@@ -250,20 +255,31 @@ avaliação (`avaliacao/`).
 | **"Certa na tela" não é "escolhida":** o efeito no revisor não foi medido com usuários | Medir no piloto: tempo e acerto da decisão |
 | **Qualidade de dados do banco real:** registros "Teste" nas tabelas de tipo de OPM, códigos órfãos, colunas sem FK | Limpeza e FKs após a implantação |
 | Sem login (revisor é um nome digitado); banco compartilhado entre os sistemas; schema por SQL | SSO, Alembic e evento `viatura.movimentada` se os bancos forem separados |
+| **Análise da IA síncrona e sem teto por lote:** com centenas de unidades (~2,3 s cada) a requisição demoraria minutos; o botão desabilitado protege só a aba aberta | Processar em lotes (ex.: 20 por clique, "restam N") ou em segundo plano com progresso; trava contra execução simultânea |
 
 ---
 
 ## 11. Roteiro da demonstração (~15 min)
 
-Antes: `docker compose up -d --build` (ou `POSTGRES_PORTA_HOST=5435 ...`), Ollama aberto,
-`scripts.reset_demo`, http://localhost:5173.
+**Checklist (15 min antes):**
+
+1. `docker compose up -d --build` (ou `POSTGRES_PORTA_HOST=5435 ...`) e `docker compose ps`: quatro serviços
+   rodando, Postgres *healthy*.
+2. `docker compose exec -T logistica-api python -m scripts.reset_demo` (estado "antes da correção").
+3. Ollama aberto e o modelo já carregado: `ollama run qwen2.5:7b "oi"` (a primeira chamada é lenta);
+   `ollama ps` deve mostrar GPU.
+4. Abas abertas: http://localhost:5173 (aba Operação, "mostrar unidade do cadastro antigo" marcado),
+   http://localhost:8001/api/de-para/ia/execucoes, este documento (seções 2, 4, 7 e 10) e o terminal com
+   `evidencias/testes_*.txt`.
+5. Campo **Revisor** preenchido na aba Implantação (ex.: `sgt.revisor`).
+6. Plano B: capturas em `evidencias/telas/`, se a demo travar.
 
 | # | Roteiro do curso | O que mostrar | Tempo |
 |---|---|---|---|
 | 1 | Problema e público | Números reais (seção 1); na tela, 20 viaturas "invisíveis no Cautela" e o P4 da OPM 2 sem viaturas | 2 min |
-| 2 | Fluxo completo com entrada real de teste | Aba Implantação: preencher Revisor → **Sugerir com IA** → mostrar sugestão, confiança, justificativa, **alerta** (107) e **outras opções** (107, 110) → confirmar as 6 → carga (7 lotadas, 4 na OPM 0, 1 divergência) → divergência JKL1S11 → P4 da OPM 2 passa a ver | 6 min |
+| 2 | Fluxo completo com entrada real de teste | Aba Implantação: preencher Revisor → **Sugerir com IA** → mostrar sugestão, confiança, justificativa, **alerta** (107) e **outras opções** (107, 110) → confirmar 5 (a 110 fica para o teste de falha) → carga (7 lotadas, 5 na OPM 0, 1 divergência) → divergência JKL1S11 → P4 da OPM 2 passa a ver | 6 min |
 | 3 | Onde a IA participa e o que é determinístico | Tabela da seção 4 + fluxo da seção 2 | 2 min |
-| 4 | Teste de erro/falha | Fechar o Ollama → "IA indisponível" e semelhança continua; movimentar para OPM extinta → mensagem do RF03; `GET /api/de-para/ia/execucoes` | 2 min |
+| 4 | Teste de erro/falha | Fechar o Ollama → **Sugerir com IA** (a 110 ainda aguarda) → "IA indisponível" e o fluxo continua; confirmar a 110 pela 1ª das outras opções (a KLM4D44 sai da OPM 0 na hora); movimentar para OPM extinta → mensagem do RF03; `GET /api/de-para/ia/execucoes` | 2 min |
 | 5 | Arquitetura, segurança e limitações | Seções 2, 7 e 10; evolução v1 → v8 (seção 4) | 3 min |
 
 Resultado esperado da IA na demo (dados fictícios, RAG desligado — vale a `v8s`): 103, 106, 108 e 109

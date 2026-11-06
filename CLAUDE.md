@@ -212,9 +212,11 @@ histórico, rollback total, 60+ testes com Postgres, e2e e CI.
    seletor de candidatas por embeddings locais — a OPM certa está entre as 5 candidatas em ~81% dos casos.
 3. Revisar à mão uma amostra dos erros do híbrido (separar erro do método × ruído do gabarito).
 4. Etapa de divergências: no banco real não há coluna "certa" presumida; mostrar as duas ao revisor.
-5. Documentar para a apresentação: critério de sucesso, desenho da arquitetura e seção de limitações.
+5. ~~Documentar para a apresentação~~: feito em `docs/APRESENTACAO.md` (critérios, arquitetura, IA,
+   testes, segurança, limitações, roteiro). Índice das evidências em `evidencias/README.md`.
    Fine-tuning e MCP foram avaliados e descartados por ora (poucos pares e ruidosos; MCP não melhora a
    qualidade da sugestão).
+6. Teto por lote e trava contra execução simultânea no "Sugerir com IA" (hoje síncrono; ver limitações).
 
 Testes da logística localmente: se a porta 5433 estiver ocupada, suba um Postgres de teste em outra porta
 e aponte `TEST_DATABASE_URL` para ele (`DB_SQL_DIR=../db`).

@@ -1,7 +1,10 @@
 # Frota PMMT: lotação de viaturas (MVP)
 
 Primeira versão demonstrável da correção do vínculo viatura → OPM entre o **Sistema de Logística**
-e o **Sistema de Cautela**. **Todos os dados, nomes e colunas são fictícios.**
+e o **Sistema de Cautela**. **A demonstração usa só dados fictícios** (viaturas, placas, lotações e cidades);
+os nomes de unidades citados como exemplo de padrão são públicos (organograma da instituição). A avaliação
+da IA (`avaliacao/`) leu o banco de desenvolvimento em modo somente leitura e publica só contagens; ver a
+seção 7 de [`docs/APRESENTACAO.md`](docs/APRESENTACAO.md).
 
 **Apresentação do projeto (requisitos do curso, arquitetura, IA, testes e limitações):** [`docs/APRESENTACAO.md`](docs/APRESENTACAO.md).
 

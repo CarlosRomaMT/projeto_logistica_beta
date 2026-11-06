@@ -1,0 +1,27 @@
+# pytest avaliacao/tests -v  (06/11/2026, Python 3.13, sem banco real nem Ollama: IA e conexão simuladas)
+============================= test session starts ==============================
+platform linux -- Python 3.13.18, pytest-8.3.4, pluggy-1.6.0 -- /usr/local/bin/python
+rootdir: /tmp/claude-0/-home-claude/f36abf22-e78b-53b5-a208-b24381233605/scratchpad/proj2
+plugins: platformdirs-4.13.5, anyio-4.15.1
+collecting ... collected 18 items
+
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT placa FROM transporte.tb_veiculo] PASSED [  5%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT cod_veiculo, chassi FROM transporte.tb_veiculo] PASSED [ 11%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT renavam FROM transporte.tb_veiculo] PASSED [ 16%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT obs FROM transporte.tb_veiculo] PASSED [ 22%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT log_inc_login FROM sgpm.opm] PASSED [ 27%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT telefone_1 FROM sgpm.opm] PASSED [ 33%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT * FROM transporte.tb_veiculo] PASSED [ 38%]
+avaliacao/tests/test_avaliacao.py::test_consultas_com_dado_protegido_sao_bloqueadas[SELECT v.* FROM transporte.tb_veiculo v] PASSED [ 44%]
+avaliacao/tests/test_avaliacao.py::test_contagens_e_colunas_de_codigo_sao_permitidas PASSED [ 50%]
+avaliacao/tests/test_avaliacao.py::test_todas_as_consultas_do_projeto_passam_na_protecao[avaliacao.diagnostico_real] PASSED [ 55%]
+avaliacao/tests/test_avaliacao.py::test_todas_as_consultas_do_projeto_passam_na_protecao[avaliacao.gerar_gabarito] PASSED [ 61%]
+avaliacao/tests/test_avaliacao.py::test_url_vem_do_env_file_sem_o_driver_do_sqlalchemy PASSED [ 66%]
+avaliacao/tests/test_avaliacao.py::test_variavel_de_ambiente_tem_prioridade PASSED [ 72%]
+avaliacao/tests/test_avaliacao.py::test_sem_configuracao_explica_o_que_falta PASSED [ 77%]
+avaliacao/tests/test_avaliacao.py::test_metricas_do_comparativo PASSED   [ 83%]
+avaliacao/tests/test_avaliacao.py::test_metricas_do_alerta_de_coerencia PASSED [ 88%]
+avaliacao/tests/test_avaliacao.py::test_metricas_do_top3_na_duvida PASSED [ 94%]
+avaliacao/tests/test_avaliacao.py::test_metricas_sem_ia PASSED           [100%]
+
+============================== 18 passed in 0.71s ==============================
