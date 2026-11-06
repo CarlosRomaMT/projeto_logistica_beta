@@ -269,3 +269,15 @@ Antes: `docker compose up -d --build` (ou `POSTGRES_PORTA_HOST=5435 ...`), Ollam
 Resultado esperado da IA na demo (dados fictícios, RAG desligado — vale a `v8s`): 103, 106, 108 e 109
 sugeridas certas; 107 sugerida errada **com alerta** e a certa como primeira das outras opções; 110 sem
 sugestão, com a certa como primeira das outras opções.
+
+> **Nota — o RAG não atua na demonstração.** O RAG de exemplos só liga com pelo menos 20 associações
+> conhecidas (`IA_MIN_EXEMPLOS_RAG`), porque com poucos exemplos ele piorava as sugestões. O seed fictício
+> tem só 4 (as confirmadas por nome idêntico) — 10 depois que o revisor confirma as 6 da demo — e nenhum
+> par de viaturas já preenchidas (exige ≥ 2 viaturas da mesma unidade antiga na mesma OPM). Por isso, na
+> demo, cada sugestão é gravada como **"qwen2.5:7b (prompt v8s)"** (versão sem RAG) e o log da API
+> registra "RAG desligado: 4 associação(ões) confirmada(s), mínimo 20". Os acertos da tela vêm das
+> regras do prompt (hierarquia e subida de nível); o erro da 107 (confundir o núcleo com a unidade
+> superior) é justamente o caso que o RAG corrige, e na demo é tratado pelo alerta e pelo top 3.
+> O ganho do RAG é apresentado pela **avaliação com dados reais** (seção 4: precisão de 74,1% para 83,0%,
+> com 69 exemplos só da partição dev) e vale em produção, onde ~265 pares das viaturas já preenchidas o
+> ligam desde o início. Não mostramos o RAG ao vivo com dados reais para não exibir nomes de unidades.
