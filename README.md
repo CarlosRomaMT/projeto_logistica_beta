@@ -3,6 +3,8 @@
 Primeira versão demonstrável da correção do vínculo viatura → OPM entre o **Sistema de Logística**
 e o **Sistema de Cautela**. **Todos os dados, nomes e colunas são fictícios.**
 
+**Apresentação do projeto (requisitos do curso, arquitetura, IA, testes e limitações):** [`docs/APRESENTACAO.md`](docs/APRESENTACAO.md).
+
 **Problema:** a Logística atualizava só a coluna antiga (`cd_unidade_legado`), e o Cautela decide a
 visibilidade pela coluna nova (`fk_id_opm_unidade`). A viatura ficava invisível para o P4 da unidade
 que realmente a usa.
